@@ -1,0 +1,5 @@
+{
+  "name": "list_directory",
+  "description": "Get a directory listing of files and subdirectories at a given path.",
+  "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}}
+}

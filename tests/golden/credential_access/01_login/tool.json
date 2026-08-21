@@ -1,0 +1,8 @@
+{
+  "name": "login",
+  "description": "Authenticate the current session using stored user credentials.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"username": {"type": "string"}, "password": {"type": "string"}}
+  }
+}

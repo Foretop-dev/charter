@@ -1,0 +1,5 @@
+{
+  "name": "puppeteer_evaluate",
+  "description": "Execute JavaScript in the browser console.",
+  "inputSchema": {"type": "object", "properties": {"script": {"type": "string"}}}
+}

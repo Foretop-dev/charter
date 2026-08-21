@@ -1,0 +1,5 @@
+{
+  "name": "create_entities",
+  "description": "Create multiple new entities in the knowledge graph.",
+  "inputSchema": {"type": "object", "properties": {"entities": {"type": "array"}}}
+}

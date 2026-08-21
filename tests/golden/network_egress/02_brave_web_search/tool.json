@@ -1,0 +1,8 @@
+{
+  "name": "brave_web_search",
+  "description": "Performs a web search using the Brave Search API and returns results.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"query": {"type": "string"}, "count": {"type": "integer"}}
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "ping",
+  "description": "Checks whether the MCP server process is responsive.",
+  "inputSchema": {"type": "object", "properties": {}}
+}

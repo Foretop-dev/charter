@@ -1,0 +1,8 @@
+{
+  "name": "move_file",
+  "description": "Move or rename files and directories.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"source": {"type": "string"}, "destination": {"type": "string"}}
+  }
+}

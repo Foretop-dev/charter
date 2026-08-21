@@ -1,0 +1,5 @@
+{
+  "name": "get_pull_request",
+  "description": "Get details of a specific pull request.",
+  "inputSchema": {"type": "object", "properties": {"pull_number": {"type": "integer"}}}
+}

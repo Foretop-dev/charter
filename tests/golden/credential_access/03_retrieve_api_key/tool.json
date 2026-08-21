@@ -1,0 +1,5 @@
+{
+  "name": "retrieve_api_key",
+  "description": "Retrieves the stored API key for the specified integration.",
+  "inputSchema": {"type": "object", "properties": {"integration_id": {"type": "string"}}}
+}

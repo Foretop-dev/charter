@@ -1,0 +1,5 @@
+{
+  "name": "set_database_password",
+  "description": "Sets the password used to connect to the configured database.",
+  "inputSchema": {"type": "object", "properties": {"password": {"type": "string"}}}
+}

@@ -1,0 +1,216 @@
+# Charter's capability classifier rules — specs/charter.md §2.2's five categories (read/write/
+# network_egress/code_execution/credential_access) and §6's explicit requirement: "The
+# classifier's rules live in one YAML file, versioned, with a changelog — users must be able to
+# see why a verdict changed between releases." DEC-03 (this session): rules-only for v1, no LLM
+# assist — an unrecognized tool is classified "unknown" (capabilities: [] in charter.lock), a
+# real, honest verdict, not guessed at.
+#
+# A tool can match more than one capability — "web_search" is both `read` (it returns
+# information) and `network_egress` (it makes an outbound call), and treating it as only one
+# would under-report what the tool can actually do. Overall severity is the *maximum* across
+# every capability a tool matched (src/charter/capability.py's _CAPABILITY_SEVERITY table) —
+# specs/charter.md's own accuracy strategy: "Capability classification errs toward higher
+# severity; a misclassified-as-dangerous tool is annoying, the reverse is a breach."
+#
+# Matching is substring-on-lowercased-text for name_patterns/description_keywords, and
+# lowercased-key membership for schema_property_names — deliberately simple, same "good
+# enough, not semantically perfect" scope call this codebase already makes for PromQL/OTTL
+# condition regexes (telltale/promql.py, telltale/otel.py). A real accuracy floor (golden
+# corpus, precision/recall) is Slice 3's job, not this file's.
+
+version: 2
+changelog:
+  - version: 1
+    summary: >-
+      Initial taxonomy: read/write/network_egress/code_execution/credential_access, derived
+      from real tool-naming conventions seen across the official filesystem/GitHub/Slack/
+      Postgres MCP servers and the MCP tools/list spec's own examples (fetched live this
+      session, not written from memory).
+  - version: 2
+    summary: >-
+      Session 16's golden corpus (apps/charter/tests/golden/) caught a real false positive:
+      the bare "request" network_egress name_pattern matched GitHub's real get_pull_request
+      tool, because "pull_request" happens to contain the English word "request" — nothing to
+      do with an outbound network call. Bare "request" is too generic (also would have hit
+      "create_merge_request", "approve_service_request", etc.); replaced with the specific
+      compound forms real HTTP-client-shaped tools actually use: http_request, api_request,
+      make_request, send_request, web_request.
+
+rules:
+  - capability: code_execution
+    name_patterns:
+      [
+        "execute",
+        "exec_",
+        "_exec",
+        "eval",
+        "run_command",
+        "run_script",
+        "runcommand",
+        "shell",
+        "bash",
+        "subprocess",
+        "spawn",
+        "invoke",
+      ]
+    description_keywords:
+      [
+        "execute a command",
+        "execute a shell",
+        "execute code",
+        "run a command",
+        "run a shell",
+        "run arbitrary",
+        "shell command",
+        "arbitrary code",
+      ]
+    schema_property_names: ["command", "script", "cmd"]
+
+  # Credential access is checked before write/read on purpose in terms of severity, not match
+  # order — matching is independent per rule (every rule is checked, not first-match-wins), so
+  # ordering in this file has no effect on classification, only on how a human reads the file.
+  - capability: credential_access
+    name_patterns:
+      [
+        "auth",
+        "login",
+        "oauth",
+        "token",
+        "credential",
+        "secret",
+        "password",
+        "api_key",
+        "apikey",
+        "connect_account",
+      ]
+    description_keywords:
+      [
+        "credential",
+        "access token",
+        "api key",
+        "password",
+        "secret",
+        "authenticate",
+        "authorization",
+      ]
+    schema_property_names:
+      [
+        "token",
+        "api_key",
+        "apikey",
+        "password",
+        "secret",
+        "credential",
+        "client_secret",
+        "access_token",
+        "refresh_token",
+        "dsn",
+        "connection_string",
+      ]
+
+  - capability: network_egress
+    name_patterns:
+      [
+        "fetch",
+        "http_",
+        "_http",
+        "http_request",
+        "api_request",
+        "make_request",
+        "send_request",
+        "web_request",
+        "curl",
+        "download",
+        "browse",
+        "web_search",
+        "websearch",
+        "scrape",
+        "crawl",
+        "webhook",
+        "send_email",
+        "post_message",
+      ]
+    description_keywords:
+      [
+        "http request",
+        "make a request",
+        "fetch a url",
+        "fetch from the internet",
+        "download",
+        "web page",
+        "send an email",
+        "post to",
+      ]
+    schema_property_names: ["url", "uri", "endpoint", "webhook_url"]
+
+  - capability: write
+    name_patterns:
+      [
+        "write_",
+        "_write",
+        "create_",
+        "_create",
+        "update_",
+        "_update",
+        "delete_",
+        "_delete",
+        "remove_",
+        "_remove",
+        "edit_",
+        "_edit",
+        "modify",
+        "insert_",
+        "append_",
+        "move_",
+        "rename_",
+        "upload_",
+        "set_",
+      ]
+    description_keywords:
+      [
+        "write a file",
+        "write to",
+        "create a",
+        "creates a",
+        "delete a",
+        "deletes a",
+        "remove a",
+        "modify",
+        "update a",
+        "updates a",
+        "insert",
+        "overwrite",
+      ]
+    schema_property_names: ["content", "body", "data"]
+
+  - capability: read
+    name_patterns:
+      [
+        "read_",
+        "_read",
+        "get_",
+        "_get",
+        "list_",
+        "_list",
+        "search_",
+        "_search",
+        "query_",
+        "_query",
+        "view_",
+        "show_",
+        "describe_",
+        "find_",
+      ]
+    description_keywords:
+      [
+        "read a file",
+        "read the",
+        "retrieve",
+        "get the",
+        "list the",
+        "list all",
+        "search for",
+        "query the",
+        "look up",
+      ]
+    schema_property_names: []

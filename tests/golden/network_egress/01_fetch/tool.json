@@ -1,0 +1,5 @@
+{
+  "name": "fetch",
+  "description": "Fetches a URL from the internet and extracts its contents as markdown.",
+  "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}}}
+}

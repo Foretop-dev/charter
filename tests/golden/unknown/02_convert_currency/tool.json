@@ -1,0 +1,12 @@
+{
+  "name": "convert_currency",
+  "description": "Converts an amount from one currency to another using a fixed internal rate table.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "amount": {"type": "number"},
+      "from_currency": {"type": "string"},
+      "to_currency": {"type": "string"}
+    }
+  }
+}

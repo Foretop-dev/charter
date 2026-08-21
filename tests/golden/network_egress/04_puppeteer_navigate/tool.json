@@ -1,0 +1,5 @@
+{
+  "name": "puppeteer_navigate",
+  "description": "Navigate to a specified URL in the browser.",
+  "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}}}
+}

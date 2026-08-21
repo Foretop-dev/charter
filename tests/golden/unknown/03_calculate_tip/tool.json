@@ -1,0 +1,8 @@
+{
+  "name": "calculate_tip",
+  "description": "Calculates a suggested tip amount for a given bill total and percentage.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"bill_total": {"type": "number"}, "tip_percent": {"type": "number"}}
+  }
+}

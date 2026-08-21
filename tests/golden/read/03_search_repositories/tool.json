@@ -1,0 +1,5 @@
+{
+  "name": "search_repositories",
+  "description": "Search for GitHub repositories matching a query.",
+  "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}}
+}

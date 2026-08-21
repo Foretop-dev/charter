@@ -1,0 +1,13 @@
+{
+  "name": "update_issue",
+  "description": "Update an existing issue in a GitHub repository.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {"type": "string"},
+      "repo": {"type": "string"},
+      "issue_number": {"type": "integer"},
+      "title": {"type": "string"}
+    }
+  }
+}

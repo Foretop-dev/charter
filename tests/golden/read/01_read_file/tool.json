@@ -1,0 +1,5 @@
+{
+  "name": "read_file",
+  "description": "Read the complete contents of a file from the file system.",
+  "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}}
+}

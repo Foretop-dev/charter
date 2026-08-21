@@ -1,0 +1,5 @@
+{
+  "name": "connect_account",
+  "description": "Link an external account using an OAuth token.",
+  "inputSchema": {"type": "object", "properties": {"oauth_token": {"type": "string"}}}
+}

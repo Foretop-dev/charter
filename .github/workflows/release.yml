@@ -1,0 +1,27 @@
+name: Release
+
+# PyPI trusted publishing: no API token lives in CI, ever. Configure the trusted publisher on
+# PyPI's project settings page with: owner nclsmitchell, repository charter, workflow
+# release.yml, environment pypi. Triggered by publishing a GitHub Release (a deliberate human
+# action), not by every tag push. Copied into the mirror as .github/workflows/release.yml —
+# see scripts/mirror-workflows/charter-ci.yml for why this file is named charter-release.yml
+# here but not once it's in the mirror.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write # mandatory for PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+      - run: uv build -o dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

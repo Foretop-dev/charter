@@ -1,0 +1,5 @@
+{
+  "name": "readiness_probe",
+  "description": "Reports whether the service's readiness probe is currently passing.",
+  "inputSchema": {"type": "object", "properties": {"timeout_seconds": {"type": "integer"}}}
+}

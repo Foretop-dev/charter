@@ -1,0 +1,5 @@
+{
+  "name": "run_script",
+  "description": "Run a script file in the configured interpreter.",
+  "inputSchema": {"type": "object", "properties": {"script": {"type": "string"}}}
+}

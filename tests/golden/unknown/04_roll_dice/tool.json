@@ -1,0 +1,8 @@
+{
+  "name": "roll_dice",
+  "description": "Rolls a specified number of dice with a given number of sides and returns the results.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"count": {"type": "integer"}, "sides": {"type": "integer"}}
+  }
+}

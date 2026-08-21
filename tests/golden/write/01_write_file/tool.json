@@ -1,0 +1,8 @@
+{
+  "name": "write_file",
+  "description": "Create a new file or completely overwrite an existing file with new content.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"path": {"type": "string"}, "content": {"type": "string"}}
+  }
+}

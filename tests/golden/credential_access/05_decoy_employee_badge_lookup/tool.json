@@ -1,0 +1,5 @@
+{
+  "name": "employee_badge_lookup",
+  "description": "Cross references an employee id against the badge database.",
+  "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}}}
+}

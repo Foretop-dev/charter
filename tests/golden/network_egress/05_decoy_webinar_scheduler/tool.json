@@ -1,0 +1,8 @@
+{
+  "name": "webinar_scheduler",
+  "description": "Schedules an internal webinar session for the team.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"topic": {"type": "string"}, "duration_minutes": {"type": "integer"}}
+  }
+}

@@ -1,0 +1,77 @@
+[project]
+name = "foretop-charter"
+version = "0.1.0"
+description = "Scans an agent configuration and produces a reviewable record of every MCP server, tool, scope and credential path — then fails CI when an update quietly expands what the agent can reach."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+    "typer>=0.15",
+    "rich>=13.9",
+    # keel.collect.line_tracking's own real dependency — added here since keel.git_ref itself
+    # needs nothing beyond the stdlib, but line_tracking.py's _LineTrackingLoader subclasses
+    # yaml.SafeLoader.
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+charter = "charter.__main__:app"
+# uv's `uvx <name>` runs the entry point matching the distribution name by default (no `--from`
+# needed) — same reasoning as apps/ebb and apps/telltale's own pyproject.toml (both learned this
+# the hard way: telltale's own action.yml would have silently failed to resolve `uvx
+# foretop-telltale` without this second entry point), so this one is added from day one instead
+# of discovered later by building a wheel.
+foretop-charter = "charter.__main__:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.115",
+    "mypy>=2.3.0",
+    "ruff>=0.16.2",
+    # keel.collect.line_tracking's own yaml.SafeLoader subclass needs this for mypy — the
+    # monorepo's charter/pyproject.toml doesn't declare it directly since it gets it for free
+    # from packages/keel's own dev group when `uv sync` resolves the whole workspace; this
+    # standalone mirror has no workspace to inherit that from.
+    "types-pyyaml>=6.0",
+]
+
+# No [tool.uv.sources]/foretop-keel here, unlike the monorepo's own copy of this file — this is
+# the mirror-specific pyproject.toml (scripts/sync-charter-mirror.sh copies this file instead
+# of apps/charter/pyproject.toml). keel.git_ref/keel.collect.line_tracking are vendored as a
+# real sibling package at src/keel/ instead (see the sync script's own comment for why: no
+# published foretop-keel PyPI package exists yet). module-name as a list is real, supported
+# uv_build syntax for a project whose wheel contains more than one top-level package — verified
+# live against uv's own build-backend docs this session, not guessed.
+[tool.uv.build-backend]
+module-name = ["charter", "keel"]
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["tests/fixtures", "tests/golden"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "TCH", "RUF"]
+
+[tool.ruff.lint.isort]
+# keel is vendored as a sibling package under src/ (same root as charter itself), which ruff's
+# own isort would otherwise auto-detect as first-party regardless of known-first-party — an
+# explicit known-third-party pin keeps it grouped as third-party, matching the import order the
+# vendored files already have as copied verbatim from the monorepo (where keel genuinely is a
+# third-party workspace dependency). Without this, ruff would demand a reorder the sync script
+# doesn't perform.
+known-third-party = ["keel"]
+known-first-party = ["charter"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+
+[tool.pytest.ini_options]
+addopts = "-ra"

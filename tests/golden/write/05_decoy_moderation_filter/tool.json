@@ -1,0 +1,5 @@
+{
+  "name": "moderation_filter",
+  "description": "Filters flagged content according to moderation policy.",
+  "inputSchema": {"type": "object", "properties": {"content_id": {"type": "string"}}}
+}

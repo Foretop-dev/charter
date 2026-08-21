@@ -1,0 +1,5 @@
+{
+  "name": "executive_summary_generator",
+  "description": "Generates an executive summary document from meeting notes.",
+  "inputSchema": {"type": "object", "properties": {"meeting_id": {"type": "string"}}}
+}

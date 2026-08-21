@@ -1,0 +1,110 @@
+name: "foretop charter — MCP capability scan"
+description: >-
+  Scans an agent configuration (.mcp.json, .cursor/mcp.json) for every MCP server, tool, and
+  credential reference it grants access to, and fails the check when a pull request adds a new
+  server or expands what an existing tool can do since the merge base.
+author: "foretop"
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  path:
+    description: "Path to scan, relative to the repository root."
+    required: false
+    default: "."
+  enumerate:
+    description: >-
+      Launch each stdio server locally and call its real tools/list, to classify capabilities
+      (read/write/network_egress/code_execution/credential_access). DEC-02: this runs
+      third-party code in the CI runner, so it is opt-in, never the default. Without it, only
+      new-server drift is detected — capability-level drift needs enumeration data on both
+      sides of the comparison.
+    required: false
+    default: "false"
+  base:
+    description: >-
+      Git ref to compare against. Exits 1 only if a server or tool capability is new or more
+      severe than at the merge base with this ref — never an absolute threshold. Defaults to
+      the pull request's base SHA; set to an empty string to disable the drift gate entirely
+      (report-only).
+    required: false
+    default: ${{ github.event.pull_request.base.sha }}
+  comment-on-pr:
+    description: "Upsert a summary comment on the pull request (true/false)."
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to read/write the PR comment. Needs pull-requests: write."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  exit-code:
+    description: >-
+      charter scan's own exit code: 0 no drift, 1 drift vs --base, 2 internal error (bad ref,
+      not a git repo).
+    value: ${{ steps.scan.outputs.exit-code }}
+
+# Composite, not Docker or JS — same reasoning as apps/ebb's and apps/telltale's own action.yml
+# (CLAUDE_CODE_PLAN.md Session 8): uvx already gives this a published, versioned artifact for
+# free once foretop-charter ships to PyPI, so a container/build step would only duplicate that.
+runs:
+  using: "composite"
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v9.0.0
+
+    - name: Scan and emit PR annotations
+      id: scan
+      shell: bash
+      run: |
+        set +e
+        args=(scan "${{ inputs.path }}" --format annotations)
+        if [ "${{ inputs.enumerate }}" = "true" ]; then
+          args+=(--enumerate)
+        fi
+        if [ -n "${{ inputs.base }}" ]; then
+          args+=(--base "${{ inputs.base }}")
+        fi
+        uvx foretop-charter "${args[@]}"
+        echo "exit-code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Render PR comment body
+      if: inputs.comment-on-pr == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      run: |
+        args=(scan "${{ inputs.path }}" --format markdown)
+        if [ "${{ inputs.enumerate }}" = "true" ]; then
+          args+=(--enumerate)
+        fi
+        if [ -n "${{ inputs.base }}" ]; then
+          args+=(--base "${{ inputs.base }}")
+        fi
+        # The gate has already run in the previous step — --format markdown can itself exit 1
+        # on the same drift, which would kill this step under `set -e` before the comment is
+        # ever rendered. The exit code that actually fails the job is the earlier step's.
+        set +e
+        uvx foretop-charter "${args[@]}" > charter-comment-body.md
+        exit 0
+
+    # Find-and-edit by an HTML marker, never post a second comment on repeat pushes — see
+    # scripts/upsert_pr_comment.sh (ebb's own copy, root of the repo) for the same logic this
+    # app's copy (scripts/upsert_pr_comment.sh, relative to this action) duplicates on purpose.
+    - name: Upsert PR comment
+      if: inputs.comment-on-pr == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMENT_BODY_FILE: charter-comment-body.md
+        COMMENT_MARKER: "<!-- foretop:charter:pr-comment -->"
+      run: ${{ github.action_path }}/scripts/upsert_pr_comment.sh
+
+    # Exit codes are an API (mirrors specs/ebb.md §6's rule): 0/1/2 must never be conflated.
+    # `set +e` in the scan step kept it alive through a drift finding so the comment step still
+    # ran — this is what actually fails the check, once everything else has had its turn.
+    - name: Fail the check if capabilities drifted or an error occurred
+      if: steps.scan.outputs.exit-code != '0'
+      shell: bash
+      run: exit ${{ steps.scan.outputs.exit-code }}

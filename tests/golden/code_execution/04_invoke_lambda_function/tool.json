@@ -1,0 +1,8 @@
+{
+  "name": "invoke_lambda_function",
+  "description": "Invoke an AWS Lambda function with the given payload and return its response.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {"function_name": {"type": "string"}, "payload": {"type": "object"}}
+  }
+}

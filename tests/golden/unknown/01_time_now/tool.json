@@ -1,0 +1,5 @@
+{
+  "name": "time_now",
+  "description": "Returns the current server time in ISO 8601 format.",
+  "inputSchema": {"type": "object", "properties": {}}
+}

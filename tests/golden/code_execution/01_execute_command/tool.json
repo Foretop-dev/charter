@@ -1,0 +1,5 @@
+{
+  "name": "execute_command",
+  "description": "Execute a shell command on the host system and return its output.",
+  "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}}}
+}

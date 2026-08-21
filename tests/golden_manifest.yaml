@@ -1,0 +1,68 @@
+# Hand-labelled ground truth for the golden corpus under tests/golden/. Deliberately kept
+# OUTSIDE that directory tree (mirrors apps/ebb/tests/golden_manifest.yaml's own reasoning):
+# a literal capability-name string here would otherwise risk being read as fixture data if it
+# lived inside tests/golden/ itself.
+#
+# Each fixture is one real MCP tool definition (name/description/inputSchema), grounded in the
+# actual official filesystem/GitHub/Slack/Puppeteer/Brave-Search MCP servers
+# src/charter/rules/capability_taxonomy.yaml's own changelog already cites — not invented
+# vocabulary. `path` is relative to tests/golden/; `capability` is one of the five
+# CapabilityClass values. A tool absent from this manifest entirely (every fixture under
+# golden/unknown/, and every */05_decoy_*/ fixture) is expected to classify as unknown
+# (capabilities == frozenset()) — DEC-03's honest verdict, not a fixture mistake.
+#
+# A tool can legitimately appear more than once here under different capabilities — e.g.
+# retrieve_api_key is both `read` (it retrieves something) and `credential_access` (what it
+# retrieves is a secret) — under-reporting either would hide something real, the same stance
+# capability.py's own docstring takes.
+
+- path: read/01_read_file/tool.json
+  capability: read
+- path: read/02_list_directory/tool.json
+  capability: read
+- path: read/03_search_repositories/tool.json
+  capability: read
+- path: read/04_get_pull_request/tool.json
+  capability: read
+
+- path: write/01_write_file/tool.json
+  capability: write
+- path: write/02_update_issue/tool.json
+  capability: write
+- path: write/03_move_file/tool.json
+  capability: write
+- path: write/04_create_entities/tool.json
+  capability: write
+
+- path: network_egress/01_fetch/tool.json
+  capability: network_egress
+- path: network_egress/02_brave_web_search/tool.json
+  capability: network_egress
+- path: network_egress/02_brave_web_search/tool.json
+  capability: read
+- path: network_egress/03_slack_post_message/tool.json
+  capability: network_egress
+- path: network_egress/04_puppeteer_navigate/tool.json
+  capability: network_egress
+
+- path: code_execution/01_execute_command/tool.json
+  capability: code_execution
+- path: code_execution/02_run_script/tool.json
+  capability: code_execution
+- path: code_execution/03_puppeteer_evaluate/tool.json
+  capability: code_execution
+- path: code_execution/04_invoke_lambda_function/tool.json
+  capability: code_execution
+
+- path: credential_access/01_login/tool.json
+  capability: credential_access
+- path: credential_access/02_connect_account/tool.json
+  capability: credential_access
+- path: credential_access/03_retrieve_api_key/tool.json
+  capability: credential_access
+- path: credential_access/03_retrieve_api_key/tool.json
+  capability: read
+- path: credential_access/04_set_database_password/tool.json
+  capability: credential_access
+- path: credential_access/04_set_database_password/tool.json
+  capability: write

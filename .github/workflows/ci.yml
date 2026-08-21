@@ -1,0 +1,28 @@
+name: CI
+
+# Standalone equivalent of the monorepo's _reusable-ci.yml `check` job, without the
+# apps/<app> path prefix — this repo IS charter, not one member of a workspace. Kept in sync
+# by hand via scripts/sync-charter-mirror.sh in the private monorepo; if you're editing this
+# file directly in the mirror, also update it there so the next sync doesn't silently revert
+# you. Named charter-ci.yml here (unlike ebb's own unprefixed ci.yml) purely because it arrived
+# after ebb into a directory ebb already used — not a meaningful difference once copied into
+# the mirror, where it becomes .github/workflows/ci.yml either way.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest tests -q
