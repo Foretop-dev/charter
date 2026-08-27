@@ -19,9 +19,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
-
 from keel.report import DEFAULT_HUB_URL
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Baseline(BaseModel):

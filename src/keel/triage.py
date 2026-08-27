@@ -28,9 +28,8 @@ import hashlib
 from datetime import date, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
-
 from keel.finding import ProductCode
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class Lane(StrEnum):

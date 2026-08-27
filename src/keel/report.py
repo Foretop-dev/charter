@@ -4,7 +4,6 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import httpx
-
 from keel.finding import Finding
 from keel.run import detect_run
 from keel.triage import TriageResult

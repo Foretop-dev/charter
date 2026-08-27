@@ -2,9 +2,8 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
-
 from keel.git_ref import GitError, toplevel
+from pydantic import BaseModel, ConfigDict
 
 
 class Run(BaseModel):
