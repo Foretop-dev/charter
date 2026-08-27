@@ -1,24 +1,33 @@
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
+from keel.finding import Verdict
+from keel.gate import GateFetchError, gate_identities, maybe_fetch_gate, summarize
 from keel.git_ref import GitError, merge_base, toplevel
+from keel.render.triage_json import render_triage_json
+from keel.report import ReportError, maybe_report
+from keel.triage import TriageResult
 from rich.console import Console
 
 from charter.brand import BRAND
 from charter.collect import collect
 from charter.drift import Drift, compute_drift
 from charter.enumerate import EnumerationResult, enumerate_stdio_server
+from charter.findings import to_findings
 from charter.git_ref import show_file_at_ref
 from charter.lockfile import to_manifest, write_lock
 from charter.models import Server, ServerSet, Transport
 from charter.render.annotations import render_annotations
+from charter.render.json_renderer import render_json
 from charter.render.markdown import render_markdown
 from charter.render.sarif import render_sarif
 from charter.render.terminal import render_drift, render_terminal
+from charter.triage import build_triage
 
-_FORMATS = ("table", "markdown", "sarif", "annotations")
+_FORMATS = ("table", "markdown", "json", "sarif", "annotations", "triage-json")
 
 app = typer.Typer(
     name="charter",
@@ -76,6 +85,9 @@ def _render(
     lock_path: Path,
     enumeration: dict[Server, EnumerationResult],
     drift: tuple[Drift, ...],
+    root: Path,
+    *,
+    triage: TriageResult | None = None,
 ) -> str:
     no_color = not sys.stdout.isatty()
     if fmt == "table":
@@ -85,6 +97,11 @@ def _render(
         return output
     if fmt == "markdown":
         return render_markdown(server_set, enumeration, drift)
+    if fmt == "json":
+        # The suite-wide Finding envelope (keel.finding), identical to ebb's and telltale's own
+        # --format json — not a charter-shaped server/tool dump. That is what makes one hosted
+        # dashboard, one digest and one baseline format possible across products.
+        return render_json(to_findings(server_set, enumeration, drift, root))
     if fmt == "sarif":
         # `enumeration` is {} whenever --enumerate wasn't passed — render_sarif still returns a
         # valid SARIF log in that case (the full rule catalog, zero results), since there is
@@ -93,6 +110,9 @@ def _render(
         return json.dumps(render_sarif(server_set, enumeration), indent=2, sort_keys=True)
     if fmt == "annotations":
         return render_annotations(drift)
+    if fmt == "triage-json":
+        assert triage is not None  # guaranteed by the fmt == "triage-json" caller-side guard
+        return render_triage_json(triage)
     raise ValueError(f"unknown format: {fmt!r}")
 
 
@@ -105,7 +125,9 @@ def scan(
         help="Path to write charter.lock to. Defaults to <path>/charter.lock.",
     ),
     fmt: str = typer.Option(
-        "table", "--format", help="Output format: table, markdown, sarif, or annotations."
+        "table",
+        "--format",
+        help="Output format: table, markdown, json, sarif, annotations, or triage-json.",
     ),
     enumerate_tools: bool = typer.Option(
         False,
@@ -126,6 +148,20 @@ def scan(
         "capability is new or more severe than at the merge base with this ref — never an "
         "absolute threshold. Needs --enumerate on both sides for tool-level drift; without "
         "it, only new-server drift is detectable.",
+    ),
+    report: bool = typer.Option(
+        False,
+        "--report",
+        help="Send this run's findings to the hub (FORETOP_TOKEN required). Off by default. "
+        "Always prints the exact payload before sending — findings are metadata only, "
+        "never your source.",
+    ),
+    gate: bool = typer.Option(
+        False,
+        "--gate",
+        help="Fetch the org's baseline/suppressions from the hub (FORETOP_TOKEN required) and "
+        "exclude matching drift from the exit-1 decision. Off by default; a no-op unless "
+        "--base is also given.",
     ),
 ) -> None:
     """Parse committed MCP client configs (.mcp.json, .cursor/mcp.json) under `path` and write
@@ -150,9 +186,47 @@ def scan(
         current_manifest = to_manifest(server_set, root, enumeration)
         drift = _drift_vs_base(root, lock_path, base, current_manifest)
 
-    output = _render(fmt, server_set, lock_path, enumeration, drift)
+    # Computed lazily, shared between --format triage-json and --report — a plain scan with
+    # neither flag must never pay for it, and giving both at once must not compute it twice.
+    triage = (
+        build_triage(server_set, enumeration, drift, root)
+        if fmt == "triage-json" or report
+        else None
+    )
+    output = _render(fmt, server_set, lock_path, enumeration, drift, root, triage=triage)
     if output:
         print(output)
 
-    if drift:
+    if report:
+        try:
+            findings = to_findings(server_set, enumeration, drift, root)
+            maybe_report(
+                enabled=True, product="charter", path=path, findings=findings, triage=triage
+            )
+        except ReportError as exc:
+            error_console.print(str(exc))
+            raise typer.Exit(code=2) from exc
+
+    candidates = {
+        f.identity
+        for f in to_findings(server_set, enumeration, drift, root)
+        if f.verdict == Verdict.BREAK
+    }
+    # --gate is a no-op both when unset and when there's no drift to begin with — no network
+    # call in either case. Unlike telltale's Regression, a single Drift on one tool marks
+    # *every* capability finding for that tool BREAK (_tool_capability_findings' own
+    # documented imprecision), so identities are derived from the real to_findings() output
+    # (confirmed the only source of BREAK in charter's own findings.py) rather than
+    # hand-rederiving from Drift objects directly.
+    if gate and candidates:
+        try:
+            gate_response = maybe_fetch_gate(enabled=True)
+        except GateFetchError as exc:
+            error_console.print(str(exc))
+            raise typer.Exit(code=2) from exc
+        assert gate_response is not None  # enabled=True always returns a GateResponse
+        result = gate_identities(candidates, gate_response, today=datetime.now(UTC).date())
+        print(summarize(result))
+        candidates -= result.excluded
+    if candidates:
         raise typer.Exit(code=1)

@@ -323,9 +323,9 @@ missing the hard way, so it was checked directly this time rather than assumed. 
 both present in charter's `pyproject.toml` from Slice 1 — nothing to fix there.
 
 **Still the user's job, not this session's** (`NEXT_STEPS.md` Track A, same split every
-predecessor used): creating the `nclsmitchell/charter` repo, actually running
+predecessor used): creating the `foretop-dev/charter` repo, actually running
 `sync-charter-mirror.sh`, creating the `foretop-charter` PyPI project, configuring its trusted
-publisher (owner `nclsmitchell`, repository `charter`, workflow `release.yml`, environment
+publisher (owner `foretop-dev`, repository `charter`, workflow `release.yml`, environment
 `pypi`), cutting a `charter-v0.1.0` release, and Marketplace submission. The `foretop-keel`
 workspace-only dependency problem `packages/keel/README.md` used to document as unresolved for
 this mirror (and ebb's/telltale's) is fixed as of a later session — see that file's own

@@ -1,7 +1,6 @@
-from io import StringIO
 from pathlib import Path
 
-from rich.console import Console
+from keel.render.terminal import render_tables
 from rich.markup import escape
 from rich.table import Table
 
@@ -103,17 +102,8 @@ def render_terminal(
         tools = _tools_cell(server, enumeration, no_color)
         table.add_row(escape(server.name), server.transport.value, reach, env, headers, tools)
 
-    buffer = StringIO()
-    console = Console(
-        file=buffer,
-        width=120,
-        no_color=no_color,
-        highlight=not no_color,
-        force_terminal=not no_color,
-    )
-    console.print(table)
-    console.print(f"{len(servers.servers)} server(s) — wrote {lock_path}")
-    return buffer.getvalue()
+    summary = f"{len(servers.servers)} server(s) — wrote {lock_path}"
+    return render_tables([table], summary, no_color=no_color)
 
 
 def render_drift(drift: tuple[Drift, ...], *, no_color: bool = False) -> str:
@@ -137,14 +127,5 @@ def render_drift(drift: tuple[Drift, ...], *, no_color: bool = False) -> str:
         )
         table.add_row(*(r if no_color else f"[red]{r}[/red]" for r in row))
 
-    buffer = StringIO()
-    console = Console(
-        file=buffer,
-        width=120,
-        no_color=no_color,
-        highlight=not no_color,
-        force_terminal=not no_color,
-    )
-    console.print(table)
-    console.print(f"{len(drift)} drift finding(s) vs merge base")
-    return buffer.getvalue()
+    summary = f"{len(drift)} drift finding(s) vs merge base"
+    return render_tables([table], summary, no_color=no_color)

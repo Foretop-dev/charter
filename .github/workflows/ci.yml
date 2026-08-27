@@ -2,7 +2,7 @@ name: CI
 
 # Standalone equivalent of the monorepo's _reusable-ci.yml `check` job, without the
 # apps/<app> path prefix — this repo IS charter, not one member of a workspace. Kept in sync
-# by hand via scripts/sync-charter-mirror.sh in the private monorepo; if you're editing this
+# by hand via scripts/sync-mirror.sh in the private monorepo; if you're editing this
 # file directly in the mirror, also update it there so the next sync doesn't silently revert
 # you. Named charter-ci.yml here (unlike ebb's own unprefixed ci.yml) purely because it arrived
 # after ebb into a directory ebb already used — not a meaningful difference once copied into

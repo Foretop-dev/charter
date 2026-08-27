@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+from keel.report import ReportError
 from typer.testing import CliRunner
 
 from charter.cli import app
@@ -285,3 +287,168 @@ def test_scan_without_base_never_exits_1(tmp_path: Path) -> None:
     result = runner.invoke(app, ["scan", str(service)])
 
     assert result.exit_code == 0
+
+
+def test_gate_defaults_to_off_and_makes_no_network_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, base_branch = make_git_service(tmp_path)
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers": {"svc1": {"command": "npx"}, "svc2": {"command": "npx"}}}'
+    )
+
+    def fail_if_called(**kwargs: object) -> object:
+        raise AssertionError("maybe_fetch_gate should not be called when --gate is absent")
+
+    monkeypatch.setattr("charter.cli.maybe_fetch_gate", fail_if_called)
+
+    result = runner.invoke(app, ["scan", str(repo), "--base", base_branch])
+
+    assert result.exit_code == 1
+
+
+def test_gate_without_base_is_a_noop_and_makes_no_network_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = make_service(tmp_path)
+
+    def fail_if_called(**kwargs: object) -> object:
+        raise AssertionError("maybe_fetch_gate should not be called without --base")
+
+    monkeypatch.setattr("charter.cli.maybe_fetch_gate", fail_if_called)
+
+    result = runner.invoke(app, ["scan", str(service), "--gate"])
+
+    assert result.exit_code == 0
+
+
+def test_gate_excludes_a_baselined_new_server_from_the_exit_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from keel.gate import Baseline, GateResponse
+
+    from charter.findings import compute_identity
+
+    repo, base_branch = make_git_service(tmp_path)
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers": {"svc1": {"command": "npx"}, "svc2": {"command": "npx"}}}'
+    )
+    identity = compute_identity("svc2", None, None)
+    monkeypatch.setattr(
+        "charter.cli.maybe_fetch_gate",
+        lambda **kwargs: GateResponse(baseline=Baseline(name="main", identities=[identity])),
+    )
+
+    result = runner.invoke(app, ["scan", str(repo), "--base", base_branch, "--gate"])
+
+    assert result.exit_code == 0
+    assert "gate: 1 finding(s) excluded (1 baselined)" in result.stdout
+
+
+def test_gate_fetch_error_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from keel.gate import GateFetchError
+
+    repo, base_branch = make_git_service(tmp_path)
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers": {"svc1": {"command": "npx"}, "svc2": {"command": "npx"}}}'
+    )
+
+    def raise_gate_error(**kwargs: object) -> None:
+        raise GateFetchError("FORETOP_TOKEN is not set")
+
+    monkeypatch.setattr("charter.cli.maybe_fetch_gate", raise_gate_error)
+
+    result = runner.invoke(app, ["scan", str(repo), "--base", base_branch, "--gate"])
+
+    assert result.exit_code == 2
+
+
+def test_report_defaults_to_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = make_service(tmp_path)
+    calls = []
+    monkeypatch.setattr("charter.cli.maybe_report", lambda **kwargs: calls.append(kwargs))
+
+    result = runner.invoke(app, ["scan", str(service)])
+
+    assert result.exit_code == 0
+    assert calls == []
+
+
+def test_report_flag_calls_maybe_report_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = make_service(tmp_path)
+    calls = []
+    monkeypatch.setattr("charter.cli.maybe_report", lambda **kwargs: calls.append(kwargs))
+
+    result = runner.invoke(app, ["scan", str(service), "--report"])
+
+    assert result.exit_code == 0
+    assert calls[0]["enabled"] is True
+    assert calls[0]["product"] == "charter"
+
+
+def test_report_alone_attaches_a_real_triage_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = make_service(tmp_path)
+    calls = []
+    monkeypatch.setattr("charter.cli.maybe_report", lambda **kwargs: calls.append(kwargs))
+
+    result = runner.invoke(app, ["scan", str(service), "--report"])
+
+    assert result.exit_code == 0
+    assert calls[0]["triage"] is not None
+
+
+def test_report_and_triage_json_format_together_compute_triage_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import charter.cli as charter_cli
+
+    service = make_service(tmp_path)
+    calls = []
+    monkeypatch.setattr("charter.cli.maybe_report", lambda **kwargs: calls.append(kwargs))
+    real_build_triage = charter_cli.build_triage
+    call_count = {"n": 0}
+
+    def spy(*args: object, **kwargs: object) -> object:
+        call_count["n"] += 1
+        return real_build_triage(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("charter.cli.build_triage", spy)
+
+    result = runner.invoke(app, ["scan", str(service), "--format", "triage-json", "--report"])
+
+    assert result.exit_code == 0
+    assert call_count["n"] == 1
+    assert calls[0]["triage"] is not None
+
+
+def test_plain_scan_never_computes_triage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = make_service(tmp_path)
+
+    def fail_if_called(*args: object, **kwargs: object) -> object:
+        raise AssertionError("build_triage should not be called for a plain --format table scan")
+
+    monkeypatch.setattr("charter.cli.build_triage", fail_if_called)
+
+    result = runner.invoke(app, ["scan", str(service)])
+
+    assert result.exit_code == 0
+
+
+def test_report_error_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = make_service(tmp_path)
+
+    def raise_report_error(**kwargs: object) -> None:
+        raise ReportError("FORETOP_TOKEN is not set")
+
+    monkeypatch.setattr("charter.cli.maybe_report", raise_report_error)
+
+    result = runner.invoke(app, ["scan", str(service), "--report"])
+
+    assert result.exit_code == 2

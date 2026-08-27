@@ -1,16 +1,6 @@
+from keel.render.annotations import annotation, join_annotations
+
 from charter.drift import Drift, DriftKind
-
-
-def _escape_data(text: str) -> str:
-    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-
-
-def _escape_property(text: str) -> str:
-    # Same as _escape_data, plus : and , — those are structurally significant in the
-    # `key=value,key=value` property list. Matches @actions/core's escapeData/escapeProperty
-    # exactly (verified against actions/toolkit's own source, same contract apps/ebb's and
-    # apps/telltale's own render/annotations.py already verified).
-    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
 
 
 def _message(drift: Drift) -> str:
@@ -40,17 +30,24 @@ def render_annotations(drift: tuple[Drift, ...]) -> str:
     Only drift gets annotated, never the whole current scan: an existing server/tool that
     already existed at the merge base isn't new information for this PR — same reasoning
     apps/telltale's own render_annotations gives for regressions. Always `error`, never
-    `warning`/`notice`: the drift gate (charter/drift.py) already decided this is worth failing
-    the check over, so there's no lower severity to annotate at.
+    `warning`/`notice` (keel's own default): the drift gate (charter/drift.py) already decided
+    this is worth failing the check over, so there's no lower severity to annotate at.
 
     Location is always the *server's* config source (`source_file`/`source_line`) — a tool has
     no line of its own (DEC-02: it comes from a live tools/list call, not static text), same
     anchor render/sarif.py already uses for the identical reason.
+
+    The escaping and line construction live in `keel.render.annotations` (Session 30) — they
+    were byte-identical across four products.
     """
-    lines = []
-    for d in drift:
-        title = _escape_property(f"charter: {d.kind.value}")
-        file_prop = _escape_property(d.source_file)
-        message = _escape_data(_message(d))
-        lines.append(f"::error file={file_prop},line={d.source_line},title={title}::{message}")
-    return "\n".join(lines) + ("\n" if lines else "")
+    return join_annotations(
+        [
+            annotation(
+                file=d.source_file,
+                line=d.source_line,
+                title=f"charter: {d.kind.value}",
+                message=_message(d),
+            )
+            for d in drift
+        ]
+    )

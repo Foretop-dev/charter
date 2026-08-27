@@ -44,6 +44,16 @@ _CAPABILITY_SEVERITY: dict[CapabilityClass, Severity] = {
     CapabilityClass.READ: Severity.LOW,
 }
 
+
+def severity_for_capability(capability: CapabilityClass) -> Severity:
+    """Public accessor for one capability's own fixed severity — added for findings.py
+    (Session 27), which needs per-capability precision (a tool matching both READ and
+    CREDENTIAL_ACCESS becomes two Finding rows, one LOW and one CRITICAL) rather than
+    classify_tool's own tool-level max. Reads the same table classify_tool uses internally,
+    kept module-private, so the two never drift apart."""
+    return _CAPABILITY_SEVERITY[capability]
+
+
 # DEC-03: "An unrecognized tool is classified unknown — a real, honest verdict, not guessed
 # at." Not LOW: an unrecognized tool could be anything, including something genuinely
 # dangerous, and calling it "safe" because no rule happened to match would be exactly the false

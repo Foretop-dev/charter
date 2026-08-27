@@ -13,6 +13,18 @@ dependencies = [
     # needs nothing beyond the stdlib, but line_tracking.py's _LineTrackingLoader subclasses
     # yaml.SafeLoader.
     "pyyaml>=6.0",
+    # keel.finding's own dependency — vendored into src/keel/finding.py by
+    # scripts/sync-mirror.sh since Session 27, when charter started emitting the
+    # suite-wide Finding schema for --format json. Not needed by the monorepo's own
+    # apps/charter/pyproject.toml, which gets it transitively via foretop-keel.
+    "pydantic>=2.9",
+    # keel.owner's own dependency (CODEOWNERS resolution, H7) and keel.report's/keel.gate's own
+    # dependency (--report, --gate) — three real gaps found consolidating the four sync scripts
+    # into scripts/sync-mirror.sh: none of these three keel modules had ever been vendored
+    # before, despite apps/charter/src/charter/{findings,cli}.py importing all of them since
+    # H1/H6/H7/H8.
+    "pathspec>=0.12",
+    "httpx>=0.28",
 ]
 
 [project.scripts]
@@ -38,7 +50,7 @@ dev = [
 ]
 
 # No [tool.uv.sources]/foretop-keel here, unlike the monorepo's own copy of this file — this is
-# the mirror-specific pyproject.toml (scripts/sync-charter-mirror.sh copies this file instead
+# the mirror-specific pyproject.toml (scripts/sync-mirror.sh copies this file instead
 # of apps/charter/pyproject.toml). keel.git_ref/keel.collect.line_tracking are vendored as a
 # real sibling package at src/keel/ instead (see the sync script's own comment for why: no
 # published foretop-keel PyPI package exists yet). module-name as a list is real, supported

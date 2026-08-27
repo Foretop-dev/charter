@@ -1,3 +1,5 @@
+from keel.render.markdown import escape_cell
+
 from charter.capability import Severity, classify_tool
 from charter.drift import Drift, DriftKind
 from charter.enumerate import EnumerationResult
@@ -6,29 +8,21 @@ from charter.models import Server, ServerSet
 _SEVERITY_ORDER = (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW)
 
 
-def _escape(text: str) -> str:
-    # Markdown's own injection surface for a table cell: a literal "|" breaks the column count,
-    # a newline breaks the row entirely. Both can appear in a tool name/description/error that
-    # comes verbatim from a live third-party server's own response (DEC-02's whole point, same
-    # reasoning render/terminal.py's rich.markup.escape use documents for its own surface).
-    return text.replace("|", "\\|").replace("\n", " ").replace("`", "'")
-
-
 def _tool_rows(server: Server, result: EnumerationResult | None) -> list[str]:
     if result is None:
-        return [f"| {_escape(server.name)} | {server.transport.value} | _not enumerated_ | | |"]
+        return [f"| {escape_cell(server.name)} | {server.transport.value} | _not enumerated_ | | |"]
     if result.error is not None:
-        error = _escape(result.error)
-        return [f"| {_escape(server.name)} | {server.transport.value} | _error: {error}_ | | |"]
+        error = escape_cell(result.error)
+        return [f"| {escape_cell(server.name)} | {server.transport.value} | _error: {error}_ | | |"]
     if not result.tools:
-        return [f"| {_escape(server.name)} | {server.transport.value} | _no tools_ | | |"]
+        return [f"| {escape_cell(server.name)} | {server.transport.value} | _no tools_ | | |"]
 
     rows = []
     for tool in sorted(result.tools, key=lambda t: t.name):
         classification = classify_tool(tool)
         capabilities = ", ".join(sorted(c.value for c in classification.capabilities)) or "unknown"
         rows.append(
-            f"| {_escape(server.name)} | {server.transport.value} | {_escape(tool.name)} | "
+            f"| {escape_cell(server.name)} | {server.transport.value} | {escape_cell(tool.name)} | "
             f"{capabilities} | {classification.severity.value} |"
         )
     return rows
@@ -59,7 +53,7 @@ def _drift_rows(drift: tuple[Drift, ...]) -> list[str]:
         else:
             what = f"{d.server_name} / {d.tool_name}"
             before, after = d.before_severity or "", d.after_severity or ""
-        rows.append(f"| {_escape(what)} | {d.kind.value} | {before} | {after} |")
+        rows.append(f"| {escape_cell(what)} | {d.kind.value} | {before} | {after} |")
     return rows
 
 
