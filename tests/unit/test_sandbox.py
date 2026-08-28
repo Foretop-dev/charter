@@ -77,6 +77,7 @@ def test_bubblewrap_policy_is_read_only_networkless_and_environment_sanitized(
     assert secret not in rendered
     assert "CHARTER_HOST_SECRET" not in rendered
     assert "--unshare-all" in argv
+    assert "--unshare-user" in argv
     assert "--new-session" in argv
     assert "--die-with-parent" in argv
     assert argv[argv.index("--cap-drop") + 1] == "ALL"
