@@ -1,4 +1,5 @@
 import json
+import struct
 from pathlib import Path
 
 import pytest
@@ -7,9 +8,27 @@ from typer.testing import CliRunner
 import charter.enumerate as enumerate_module
 import charter.sandbox as sandbox_module
 from charter.cli import app
-from charter.sandbox import SandboxUnavailableError, build_bubblewrap_launch, require_bubblewrap
+from charter.sandbox import (
+    SandboxUnavailableError,
+    _network_seccomp_program,
+    build_bubblewrap_launch,
+    require_bubblewrap,
+)
 
 runner = CliRunner()
+
+
+def test_network_filter_denies_socket_and_rejects_unreviewed_architectures() -> None:
+    program = _network_seccomp_program("x86_64")
+    instructions = [
+        struct.unpack("=HBBI", program[offset : offset + 8]) for offset in range(0, len(program), 8)
+    ]
+
+    socket_match = instructions.index((0x15, 0, 1, 41))
+    assert instructions[socket_match + 1] == (0x06, 0, 0, 0x00050001)
+    assert instructions[-1] == (0x06, 0, 0, 0x7FFF0000)
+    with pytest.raises(SandboxUnavailableError, match="no reviewed network-deny filter"):
+        _network_seccomp_program("riscv64")
 
 
 def test_enumeration_fails_closed_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,17 +85,21 @@ def test_bubblewrap_policy_is_read_only_networkless_and_environment_sanitized(
         f"/home/alice/bin:/opt/node/bin:/usr/local/bin:/usr/bin:{project}/.venv/bin:/tmp/tools",
     )
 
-    argv, child_env = build_bubblewrap_launch(
+    argv, child_env, pass_fds = build_bubblewrap_launch(
         "/usr/bin/bwrap",
         project,
         "/usr/bin/python3",
         [str(project / "server.py")],
+        seccomp_fd=23,
     )
 
     rendered = repr((argv, child_env))
     assert secret not in rendered
     assert "CHARTER_HOST_SECRET" not in rendered
-    assert "--unshare-all" in argv
+    assert "--unshare-pid" in argv
+    assert "--unshare-ipc" in argv
+    assert "--unshare-uts" in argv
+    assert "--unshare-cgroup-try" in argv
     assert "--new-session" in argv
     assert "--die-with-parent" in argv
     assert argv[argv.index("--cap-drop") + 1] == "ALL"
@@ -85,6 +108,8 @@ def test_bubblewrap_policy_is_read_only_networkless_and_environment_sanitized(
     ]
     assert "--share-net" not in argv
     assert "--clearenv" in argv
+    assert argv[argv.index("--seccomp") + 1] == "23"
+    assert pass_fds == (23,)
     assert child_env["HOME"] == "/home/charter"
     assert "/home/alice/bin" not in child_env["PATH"]
     assert "/tmp/tools" not in child_env["PATH"]

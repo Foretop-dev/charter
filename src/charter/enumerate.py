@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import re
 import subprocess
@@ -206,20 +207,25 @@ def enumerate_stdio_server(
         return EnumerationResult(server.name, (), "could not re-read the original config entry")
     command, args = launch
     bubblewrap = require_bubblewrap()
-    sandbox_argv, sandbox_env = build_bubblewrap_launch(
+    sandbox_argv, sandbox_env, sandbox_fds = build_bubblewrap_launch(
         bubblewrap, _project_root(server), command, args
     )
 
     try:
-        proc = subprocess.Popen(
-            sandbox_argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            env=sandbox_env,
-            text=True,
-            bufsize=1,
-        )
+        try:
+            proc = subprocess.Popen(
+                sandbox_argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=sandbox_env,
+                pass_fds=sandbox_fds,
+                text=True,
+                bufsize=1,
+            )
+        finally:
+            for descriptor in sandbox_fds:
+                os.close(descriptor)
     except OSError as exc:
         return EnumerationResult(server.name, (), f"failed to launch: {exc}")
 

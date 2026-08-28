@@ -8,15 +8,41 @@ the policy, so every mount and environment entry stays explicit here.
 import os
 import platform
 import shutil
+import struct
 import subprocess
+from errno import EPERM
 from functools import cache
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _WORKSPACE = Path("/workspace")
 _SANDBOX_HOME = "/home/charter"
 _SYSTEM_PATH_ROOTS = tuple(Path(path) for path in ("/usr", "/bin", "/sbin", "/opt"))
 _FALLBACK_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 _PROBE_TIMEOUT_SECONDS = 5.0
+
+# Linux classic-BPF/seccomp constants. Bubblewrap accepts a raw sock_filter array through
+# --seccomp; keeping this tiny program here avoids a Python/libseccomp dependency for one rule.
+_BPF_LD_W_ABS = 0x20
+_BPF_JMP_JEQ_K = 0x15
+_BPF_JMP_JGE_K = 0x35
+_BPF_RET_K = 0x06
+_SECCOMP_RET_KILL_PROCESS = 0x80000000
+_SECCOMP_RET_ERRNO = 0x00050000
+_SECCOMP_RET_ALLOW = 0x7FFF0000
+_SECCOMP_DATA_NR_OFFSET = 0
+_SECCOMP_DATA_ARCH_OFFSET = 4
+_X32_SYSCALL_BIT = 0x40000000
+_MFD_CLOEXEC = 0x0001
+_SECCOMP_ARCHES = {
+    "aarch64": (0xC00000B7, 198),
+    "arm64": (0xC00000B7, 198),
+    "amd64": (0xC000003E, 41),
+    "x86_64": (0xC000003E, 41),
+}
 
 
 class SandboxUnavailableError(RuntimeError):
@@ -73,7 +99,64 @@ def _sanitized_environment(project_root: Path | None = None) -> dict[str, str]:
     }
 
 
-def _probe_command(bubblewrap: str) -> list[str]:
+def _network_seccomp_program(machine: str) -> bytes:
+    try:
+        audit_arch, socket_syscall = _SECCOMP_ARCHES[machine.lower()]
+    except KeyError as exc:
+        raise SandboxUnavailableError(
+            f"--enumerate has no reviewed network-deny filter for Linux architecture {machine!r}"
+        ) from exc
+
+    instructions = [
+        # Kill a process that changes syscall ABI after the filter is installed rather than
+        # evaluating unfamiliar syscall numbers with the wrong architecture table.
+        (_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_ARCH_OFFSET),
+        (_BPF_JMP_JEQ_K, 1, 0, audit_arch),
+        (_BPF_RET_K, 0, 0, _SECCOMP_RET_KILL_PROCESS),
+        (_BPF_LD_W_ABS, 0, 0, _SECCOMP_DATA_NR_OFFSET),
+    ]
+    if machine.lower() in {"amd64", "x86_64"}:
+        # The x32 ABI shares AUDIT_ARCH_X86_64 but adds this bit to syscall numbers. Reject it
+        # so it cannot bypass the native socket syscall rule.
+        instructions.extend(
+            (
+                (_BPF_JMP_JGE_K, 0, 1, _X32_SYSCALL_BIT),
+                (_BPF_RET_K, 0, 0, _SECCOMP_RET_KILL_PROCESS),
+            )
+        )
+    instructions.extend(
+        (
+            (_BPF_JMP_JEQ_K, 0, 1, socket_syscall),
+            (_BPF_RET_K, 0, 0, _SECCOMP_RET_ERRNO | EPERM),
+            (_BPF_RET_K, 0, 0, _SECCOMP_RET_ALLOW),
+        )
+    )
+    return b"".join(struct.pack("=HBBI", *instruction) for instruction in instructions)
+
+
+def _open_network_seccomp() -> int:
+    program = _network_seccomp_program(platform.machine())
+    descriptor: int | None = None
+    raw_memfd_create = getattr(os, "memfd_create", None)
+    if raw_memfd_create is None:
+        raise SandboxUnavailableError("the Linux runtime does not provide memfd_create")
+    memfd_create = cast("Callable[[str, int], int]", raw_memfd_create)
+    try:
+        descriptor = memfd_create("charter-network-seccomp", _MFD_CLOEXEC)
+        offset = 0
+        while offset < len(program):
+            offset += os.write(descriptor, program[offset:])
+        os.lseek(descriptor, 0, os.SEEK_SET)
+    except (AttributeError, OSError) as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise SandboxUnavailableError(
+            f"the network-deny filter could not be prepared: {exc}"
+        ) from exc
+    return descriptor
+
+
+def _probe_command(bubblewrap: str, seccomp_fd: int) -> list[str]:
     return [
         bubblewrap,
         "--ro-bind",
@@ -86,7 +169,10 @@ def _probe_command(bubblewrap: str) -> list[str]:
         "/proc",
         "--dev",
         "/dev",
-        "--unshare-all",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--unshare-cgroup-try",
         "--die-with-parent",
         "--new-session",
         "--cap-drop",
@@ -95,6 +181,8 @@ def _probe_command(bubblewrap: str) -> list[str]:
         "--setenv",
         "PATH",
         _FALLBACK_PATH,
+        "--seccomp",
+        str(seccomp_fd),
         "--",
         "/bin/true",
     ]
@@ -116,17 +204,24 @@ def require_bubblewrap() -> str:
             "run a static scan without --enumerate"
         )
 
+    seccomp_fd = _open_network_seccomp()
     try:
-        probe = subprocess.run(
-            _probe_command(bubblewrap),
-            capture_output=True,
-            check=False,
-            env=_sanitized_environment(),
-            text=True,
-            timeout=_PROBE_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise SandboxUnavailableError(f"Bubblewrap isolation could not be verified: {exc}") from exc
+        try:
+            probe = subprocess.run(
+                _probe_command(bubblewrap, seccomp_fd),
+                capture_output=True,
+                check=False,
+                env=_sanitized_environment(),
+                pass_fds=(seccomp_fd,),
+                text=True,
+                timeout=_PROBE_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SandboxUnavailableError(
+                f"Bubblewrap isolation could not be verified: {exc}"
+            ) from exc
+    finally:
+        os.close(seccomp_fd)
 
     if probe.returncode != 0:
         detail = probe.stderr.strip().splitlines()
@@ -146,11 +241,17 @@ def _map_project_path(value: str, project_root: Path) -> str:
 
 
 def build_bubblewrap_launch(
-    bubblewrap: str, project_root: Path, command: str, args: list[str]
-) -> tuple[list[str], dict[str, str]]:
+    bubblewrap: str,
+    project_root: Path,
+    command: str,
+    args: list[str],
+    *,
+    seccomp_fd: int | None = None,
+) -> tuple[list[str], dict[str, str], tuple[int, ...]]:
     """Construct the only permitted launch vector for a configured stdio server."""
     root = project_root.resolve()
     sandbox_path = _sandbox_path(root)
+    network_filter_fd = _open_network_seccomp() if seccomp_fd is None else seccomp_fd
     launch = [
         bubblewrap,
         # Start from Bubblewrap's empty tmpfs root and expose only runtime files plus the
@@ -207,9 +308,10 @@ def build_bubblewrap_launch(
         str(_WORKSPACE),
         "--chdir",
         str(_WORKSPACE),
-        # --unshare-all includes the network namespace. Omitting --share-net is the policy,
-        # not an accident: enumeration learns local protocol metadata and gets no egress.
-        "--unshare-all",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--unshare-cgroup-try",
         "--die-with-parent",
         "--new-session",
         "--cap-drop",
@@ -230,8 +332,13 @@ def build_bubblewrap_launch(
         "--setenv",
         "LC_ALL",
         "C.UTF-8",
+        # GitHub's current hosted Linux kernel rejects Bubblewrap's network-namespace
+        # loopback setup. A fail-closed seccomp rule is stricter for this process: socket(2)
+        # itself returns EPERM, so no IP or Unix socket can be created at all.
+        "--seccomp",
+        str(network_filter_fd),
         "--",
         _map_project_path(command, root),
         *(_map_project_path(arg, root) for arg in args),
     ]
-    return launch, _sanitized_environment(root)
+    return launch, _sanitized_environment(root), (network_filter_fd,)

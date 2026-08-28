@@ -22,7 +22,7 @@ def protocol_tests_use_a_direct_test_launch(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(
         enumerate_module,
         "build_bubblewrap_launch",
-        lambda _bwrap, _root, command, args: ([command, *args], {}),
+        lambda _bwrap, _root, command, args: ([command, *args], {}, ()),
     )
 
 
