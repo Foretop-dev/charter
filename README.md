@@ -35,7 +35,7 @@ means the scan itself failed.
 ## GitHub Action
 
 ```yaml
-- uses: foretop-dev/charter@v0.1.0
+- uses: foretop-dev/charter@v0.2.0
   with:
     base: ${{ github.event.pull_request.base.sha }}
     enumerate: "false"
@@ -43,21 +43,25 @@ means the scan itself failed.
 
 The Action emits inline annotations and can maintain one summary comment on pull requests.
 Grant `pull-requests: write` when comments are enabled and make the base revision available to
-the checkout. Set `base` to an empty string for report-only use.
+the checkout. Set `base` to an empty string for report-only use. When enumeration is enabled,
+the Action installs Bubblewrap on compatible Linux runners and fails closed elsewhere.
 
 ## Privacy
 
 Static scanning is local. The lock records credential-reference names and argument count
 without retaining argument text; argument values are never hashed, rendered, or reported.
-Passing `--enumerate` is a materially different operation: it launches configured local stdio
-servers and calls `tools/list`, so only enable it for code you trust. `--report` and `--gate`
-are explicit hosted-mode options and never send config bodies.
+Passing `--enumerate` is a materially different Linux-only operation. Charter launches each
+configured local stdio server inside a Bubblewrap sandbox with a read-only repository, an
+isolated home and temporary directory, a sanitized environment, dropped capabilities, and no
+network. Configured credential values are not passed to the server. Charter exits `2` instead
+of launching anything when this boundary cannot be established. `--report` and `--gate` are
+explicit hosted-mode options and never send config bodies.
 
 ## Current limitations
 
 - Only project-level Claude Code and Cursor MCP configuration files are scanned.
-- Live enumeration supports local stdio servers; remote HTTP, SSE, and WebSocket servers are
-  recorded but not enumerated.
+- Live enumeration requires Linux and Bubblewrap. Remote transports are recorded but not
+  contacted, and stdio servers that require credentials or network access remain `unknown`.
 - Capability-level drift requires comparable enumeration data on both revisions.
 
 ## License

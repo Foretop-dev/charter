@@ -26,3 +26,16 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run pytest tests -q
+
+  enumeration-sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y --no-install-recommends bubblewrap
+      - run: uv sync --frozen
+      - name: Prove hostile stdio servers remain confined
+        run: uv run pytest tests/integration/test_enumeration_sandbox.py -q

@@ -1,15 +1,14 @@
 import json
-import os
 import queue
 import re
 import subprocess
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from keel.collect.line_tracking import parse_with_lines
-
 from charter.models import Server, Transport
+from charter.sandbox import build_bubblewrap_launch, require_bubblewrap
 
 # modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle (fetched live this session):
 # the client MUST send a protocolVersion it supports — "2025-06-18" is the last stable release
@@ -19,7 +18,7 @@ from charter.models import Server, Transport
 # decision, not an oversight: virtually every MCP server actually deployed today speaks this
 # one. specs/charter.md §11 already names protocol churn as a real, ongoing risk.
 _PROTOCOL_VERSION = "2025-06-18"
-_CLIENT_INFO = {"name": "foretop-charter", "version": "0.1.0"}
+_CLIENT_INFO = {"name": "foretop-charter", "version": "0.2.0"}
 _DEFAULT_TIMEOUT_SECONDS = 10.0
 _SHUTDOWN_GRACE_SECONDS = 2.0
 
@@ -70,45 +69,22 @@ def _expand_vars(text: str, env: dict[str, str]) -> str:
     return _VAR_PATTERN.sub(_replace, text)
 
 
-def _raw_entry_for(server: Server) -> dict[str, Any] | None:
-    """Re-reads `server.source_file` to get the ORIGINAL config entry for `server.name` — not
-    stored on `Server` itself, which never carries a raw `env` mapping's values (DEC-06). This
-    is the one place in charter that legitimately needs real credential values, because
-    launching a real subprocess needs them; the values live only as local variables inside this
-    module's call stack and are never assigned to any field, logged, or serialized anywhere."""
-    try:
-        document = parse_with_lines(server.source_file.read_text(encoding="utf-8"))
-    except OSError:
+def _resolve_launch(server: Server) -> tuple[str, list[str]] | None:
+    if server.command is None:
         return None
-    if not isinstance(document, dict):
-        return None
-    servers = document.get("mcpServers")
-    if not isinstance(servers, dict):
-        return None
-    entry = servers.get(server.name)
-    return entry if isinstance(entry, dict) else None
+    # Live enumeration deliberately does not reproduce the MCP client's credential-bearing
+    # environment. Defaults are still useful launch metadata, but real ${VAR} values and the
+    # config's env values do not cross into an untrusted process.
+    command = _expand_vars(server.command, {})
+    args = [_expand_vars(a, {}) for a in server.args]
+    return command, args
 
 
-def _resolve_launch(server: Server) -> tuple[str, list[str], dict[str, str]] | None:
-    entry = _raw_entry_for(server)
-    if entry is None or server.command is None:
-        return None
-    raw_env = entry.get("env")
-    parent_env = dict(os.environ)
-    declared_env = {
-        k: v
-        for k, v in (raw_env.items() if isinstance(raw_env, dict) else ())
-        if k != "__line__" and isinstance(v, str)
-    }
-    # Expansion happens against the parent's own environment, then the expanded values are
-    # merged on top of it for the child — matches Claude Code's own real behavior (a stdio
-    # server inherits the launching process's environment, plus whatever the config adds).
-    expand_against = parent_env
-    command = _expand_vars(server.command, expand_against)
-    args = [_expand_vars(a, expand_against) for a in server.args]
-    expanded_declared = {k: _expand_vars(v, expand_against) for k, v in declared_env.items()}
-    env_for_child = {**parent_env, **expanded_declared}
-    return command, args, env_for_child
+def _project_root(server: Server) -> Path:
+    source = server.source_file.resolve()
+    if source.name == "mcp.json" and source.parent.name == ".cursor":
+        return source.parent.parent
+    return source.parent
 
 
 def _send(proc: subprocess.Popen[str], message: dict[str, Any]) -> None:
@@ -216,8 +192,10 @@ def enumerate_stdio_server(
     """Launches `server` as a real subprocess and calls real `tools/list` over stdio — DEC-02's
     explicit "launching third-party servers is a security decision the user must make
     consciously" (specs/charter.md), so this is only ever called when `--enumerate` was passed.
-    Never raises: any failure (launch, protocol, timeout) becomes `EnumerationResult.error`,
-    with zero tools, so one bad server never aborts the rest of a scan."""
+    Protocol/target failures become `EnumerationResult.error`, with zero tools, so one bad
+    server never aborts the rest of a scan. A missing or unusable isolation boundary raises
+    SandboxUnavailableError instead: that is a global operational failure, never evidence
+    about a particular server."""
     if server.transport != Transport.STDIO:
         return EnumerationResult(
             server.name, (), "not a stdio server — enumeration is stdio-only for now"
@@ -226,15 +204,19 @@ def enumerate_stdio_server(
     launch = _resolve_launch(server)
     if launch is None:
         return EnumerationResult(server.name, (), "could not re-read the original config entry")
-    command, args, env = launch
+    command, args = launch
+    bubblewrap = require_bubblewrap()
+    sandbox_argv, sandbox_env = build_bubblewrap_launch(
+        bubblewrap, _project_root(server), command, args
+    )
 
     try:
         proc = subprocess.Popen(
-            [command, *args],
+            sandbox_argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            env=env,
+            env=sandbox_env,
             text=True,
             bufsize=1,
         )

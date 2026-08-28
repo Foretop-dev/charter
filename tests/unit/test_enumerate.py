@@ -3,10 +3,24 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
+import charter.enumerate as enumerate_module
 from charter.enumerate import _expand_vars, enumerate_stdio_server
 from charter.models import Server, Transport
 
 FIXTURE = (Path(__file__).resolve().parents[1] / "fixtures" / "toy_mcp_server.py").resolve()
+
+
+@pytest.fixture(autouse=True)
+def protocol_tests_use_a_direct_test_launch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep protocol unit tests portable; Linux isolation is proved separately for real."""
+    monkeypatch.setattr(enumerate_module, "require_bubblewrap", lambda: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        enumerate_module,
+        "build_bubblewrap_launch",
+        lambda _bwrap, _root, command, args: ([command, *args], {}),
+    )
 
 
 def make_server(tmp_path: Path, *extra_args: str, env_var_names: tuple[str, ...] = ()) -> Server:

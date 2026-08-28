@@ -7,11 +7,23 @@ import pytest
 from keel.report import ReportError
 from typer.testing import CliRunner
 
+import charter.enumerate as enumerate_module
 from charter.cli import app
 
 runner = CliRunner()
 
 FIXTURE = (Path(__file__).resolve().parents[1] / "fixtures" / "toy_mcp_server.py").resolve()
+
+
+@pytest.fixture(autouse=True)
+def protocol_tests_use_a_direct_test_launch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI protocol tests stay portable; the Linux integration suite proves isolation."""
+    monkeypatch.setattr(enumerate_module, "require_bubblewrap", lambda: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        enumerate_module,
+        "build_bubblewrap_launch",
+        lambda _bwrap, _root, command, args: ([command, *args], {}),
+    )
 
 
 def make_service(tmp_path: Path) -> Path:

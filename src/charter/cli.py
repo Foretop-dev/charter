@@ -25,6 +25,7 @@ from charter.render.json_renderer import render_json
 from charter.render.markdown import render_markdown
 from charter.render.sarif import render_sarif
 from charter.render.terminal import render_drift, render_terminal
+from charter.sandbox import SandboxUnavailableError
 from charter.triage import build_triage
 
 _FORMATS = ("table", "markdown", "json", "sarif", "annotations", "triage-json")
@@ -132,9 +133,9 @@ def scan(
     enumerate_tools: bool = typer.Option(
         False,
         "--enumerate",
-        help="Launch each stdio server locally and call its real tools/list. DEC-02: this "
-        "runs third-party code, so it is opt-in, never the default. Remote (http/sse/ws) "
-        "servers are not enumerated yet.",
+        help="On Linux, launch each stdio server inside Charter's fail-closed Bubblewrap "
+        "sandbox and call its real tools/list. The repository is read-only and the server "
+        "gets no network or configured credentials. Remote servers are not enumerated.",
     ),
     timeout: float = typer.Option(
         10.0,
@@ -168,7 +169,8 @@ def scan(
     a deterministic charter.lock recording every declared server, its transport, and the
     *names* (never values — DEC-06) of any credential-referencing env vars or headers it
     wires in. Static parsing only by default: no server is ever launched, no network call is
-    made, unless --enumerate is passed.
+    made. --enumerate launches local stdio servers without network access and only when the
+    required Linux/Bubblewrap isolation boundary is available.
     """
     if fmt not in _FORMATS:
         error_console.print(f"Unknown --format {fmt!r}. Choose one of: {', '.join(_FORMATS)}.")
@@ -178,7 +180,11 @@ def scan(
     lock_path = (lock.resolve() if lock else root / "charter.lock").resolve()
 
     server_set = collect(root)
-    enumeration = _enumerate_all(server_set.servers, timeout) if enumerate_tools else {}
+    try:
+        enumeration = _enumerate_all(server_set.servers, timeout) if enumerate_tools else {}
+    except SandboxUnavailableError as exc:
+        error_console.print(str(exc))
+        raise typer.Exit(code=2) from exc
     write_lock(server_set, root, lock_path, enumeration)
 
     drift: tuple[Drift, ...] = ()

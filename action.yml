@@ -15,11 +15,10 @@ inputs:
     default: "."
   enumerate:
     description: >-
-      Launch each stdio server locally and call its real tools/list, to classify capabilities
-      (read/write/network_egress/code_execution/credential_access). DEC-02: this runs
-      third-party code in the CI runner, so it is opt-in, never the default. Without it, only
-      new-server drift is detected — capability-level drift needs enumeration data on both
-      sides of the comparison.
+      On Linux, launch each stdio server inside Charter's fail-closed Bubblewrap sandbox and
+      call its real tools/list, to classify capabilities. The repository is read-only and the
+      server receives no host home, network, or configured credential environment. This is
+      opt-in, never the default. Without it, only new-server drift is detected.
     required: false
     default: "false"
   base:
@@ -43,7 +42,7 @@ outputs:
   exit-code:
     description: >-
       charter scan's own exit code: 0 no drift, 1 drift vs --base, 2 internal error (bad ref,
-      not a git repo).
+      not a git repo, or unavailable enumeration sandbox).
     value: ${{ steps.scan.outputs.exit-code }}
 
 # Composite, not Docker or JS — same reasoning as apps/ebb's and apps/telltale's own action.yml
@@ -52,6 +51,35 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Reject unsupported enumeration runners
+      if: inputs.enumerate == 'true' && runner.os != 'Linux'
+      shell: bash
+      run: |
+        echo "charter --enumerate requires a Linux runner and Bubblewrap; static scans work on this runner" >&2
+        exit 2
+
+    - name: Install the enumeration sandbox
+      if: inputs.enumerate == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        if command -v bwrap >/dev/null 2>&1; then
+          exit 0
+        fi
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "Bubblewrap is required for enumeration; install 'bubblewrap' on this runner" >&2
+          exit 2
+        fi
+        if [ "$(id -u)" -eq 0 ]; then
+          apt-get update
+          apt-get install -y --no-install-recommends bubblewrap
+        elif command -v sudo >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap
+        else
+          echo "Bubblewrap is required for enumeration and this runner cannot install it" >&2
+          exit 2
+        fi
+
     - name: Install uv
       uses: astral-sh/setup-uv@v9.0.0
 
