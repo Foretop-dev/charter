@@ -87,7 +87,6 @@ def _probe_command(bubblewrap: str) -> list[str]:
         "--dev",
         "/dev",
         "--unshare-all",
-        "--unshare-user",
         "--die-with-parent",
         "--new-session",
         "--cap-drop",
@@ -211,7 +210,6 @@ def build_bubblewrap_launch(
         # --unshare-all includes the network namespace. Omitting --share-net is the policy,
         # not an accident: enumeration learns local protocol metadata and gets no egress.
         "--unshare-all",
-        "--unshare-user",
         "--die-with-parent",
         "--new-session",
         "--cap-drop",
