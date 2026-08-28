@@ -31,18 +31,12 @@ class Server:
     parser's job is to record what a file actually says, not to pre-validate it into a shape
     that hides that.
 
-    `args` is captured verbatim, unlike `env_var_names`/`header_names` — a real, considered
-    choice, not an oversight found the hard way (`charter scan` against a fixture whose args
-    included `--dsn postgresql://readonly:pass@host/db`, a literal password in a positional
-    argument, not an env var). DEC-06's own default is "names and paths only... never attempt
-    to detect actual secret values" — extending that same non-detection stance to `args` (not
-    just `env`/`headers`) is consistent with it, not a gap in it: a config file already
-    committed to the repo (DEC-04's whole premise) has already put that string in git history
-    regardless of what charter does with it, and guessing at which positional argument "looks
-    like" a secret is exactly the value-detection DEC-06 explicitly declined to build. A
-    capability classifier (Slice 2) is the right place to flag "this arg looks credential-
-    shaped" as a heuristic *finding* a reviewer sees — not a reason for the collector to hide
-    evidence a reviewer needs to understand what the server actually does."""
+    `args` is captured verbatim only in this in-memory collection model because explicit live
+    enumeration needs the real launch vector. It is never serialized: lock schema v4 records
+    only `arg_count`, structurally preventing a password, token, or credential-bearing DSN in a
+    positional argument from reaching charter.lock, rendered output, or hosted reporting. This
+    deliberately sacrifices argument-text diffs rather than attempting fallible secret-value
+    detection or hash-logging sensitive input (DEC-06)."""
 
     name: str
     transport: Transport

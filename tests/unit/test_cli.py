@@ -133,7 +133,7 @@ def test_scan_with_enumerate_launches_the_real_server_and_shows_its_tools(tmp_pa
     assert "write_file" in result.stdout
     lock_content = (service / "charter.lock").read_text()
     assert '"read_file"' in lock_content
-    assert '"schema_version": 3' in lock_content
+    assert '"schema_version": 4' in lock_content
     assert '"capabilities"' in lock_content
     assert '"severity": "high"' in lock_content  # write_file -> write -> HIGH
 

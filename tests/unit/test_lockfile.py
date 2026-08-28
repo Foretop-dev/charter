@@ -29,6 +29,17 @@ def test_manifest_includes_the_schema_version() -> None:
     assert manifest["schema_version"] == SCHEMA_VERSION
 
 
+def test_arguments_are_structurally_excluded_and_only_their_count_is_recorded() -> None:
+    server = make_server(args=("--dsn", "postgresql://user:password@example.invalid/db"))
+
+    manifest = to_manifest(ServerSet(servers=(server,)), Path("/repo"))
+
+    entry = manifest["servers"][0]  # type: ignore[index]
+    assert "args" not in entry
+    assert entry["arg_count"] == 2  # type: ignore[index]
+    assert "password" not in json.dumps(manifest)
+
+
 def test_source_file_is_relative_to_root_never_absolute() -> None:
     server = make_server(source_file=Path("/repo/.mcp.json"))
     manifest = to_manifest(ServerSet(servers=(server,)), Path("/repo"))

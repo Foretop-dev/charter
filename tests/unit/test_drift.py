@@ -23,7 +23,7 @@ def make_server(
         "name": name,
         "transport": "stdio",
         "command": "npx",
-        "args": [],
+        "arg_count": 0,
         "env_var_names": [],
         "url": None,
         "header_names": [],
@@ -35,7 +35,7 @@ def make_server(
 
 
 def make_manifest(servers: list[dict[str, Any]]) -> dict[str, Any]:
-    return {"schema_version": 3, "servers": servers}
+    return {"schema_version": 4, "servers": servers}
 
 
 def test_no_baseline_means_no_drift() -> None:

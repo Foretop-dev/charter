@@ -5,12 +5,14 @@ from charter.capability import classify_tool
 from charter.enumerate import EnumerationResult, Tool
 from charter.models import Server, ServerSet
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 """specs/charter.md §5: "The lock file format needs a documented, versioned schema published
 from day one — third parties will read it." Bump this whenever a field is added, removed, or
 its meaning changes. v2 (Session 15, Slice 2 part 1) added `tools`/`enumeration_error` per
 server. v3 (Session 15, Slice 2 part 2) added `capabilities`/`severity`/`rule_version` per
-tool — DEC-03's rules-only classifier (src/charter/capability.py)."""
+tool — DEC-03's rules-only classifier (src/charter/capability.py). v4 structurally removed
+raw `args`, which can contain credential values, and replaced them with non-sensitive
+`arg_count`."""
 
 
 def _sort_key(server: Server) -> tuple[str, str]:
@@ -65,7 +67,11 @@ def _server_dict(
         "name": server.name,
         "transport": server.transport.value,
         "command": server.command,
-        "args": list(server.args),
+        # Arguments remain available in memory for explicit live enumeration, but their text
+        # never crosses the lock-file boundary: a positional argument can itself be a password,
+        # token, or credential-bearing DSN. Counting preserves the useful fact that arguments
+        # exist without logging or hash-logging their values (specs/charter.md DEC-06).
+        "arg_count": len(server.args),
         "env_var_names": list(server.env_var_names),
         "url": server.url,
         "header_names": list(server.header_names),

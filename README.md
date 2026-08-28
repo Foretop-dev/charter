@@ -17,7 +17,8 @@ normal review. Run `uvx foretop-charter scan --help` for every option.
 
 ## What it checks
 
-- Declared MCP servers, transports, commands, arguments, and endpoints.
+- Declared MCP servers, transports, commands, argument count, and endpoints. Schema v4
+  structurally excludes argument text because an argument can contain a credential.
 - Names of credential-referencing environment variables and headers, never their values.
 - Stable lock-file changes for new or modified servers.
 - Tool capabilities returned by local stdio servers when enumeration is explicitly enabled.
@@ -46,10 +47,11 @@ the checkout. Set `base` to an empty string for report-only use.
 
 ## Privacy
 
-Static scanning is local and reads credential names and paths, never secret values. Passing
-`--enumerate` is a materially different operation: it launches configured local stdio servers
-and calls `tools/list`, so only enable it for code you trust. `--report` and `--gate` are
-explicit hosted-mode options and never send config or secret bodies.
+Static scanning is local. The lock records credential-reference names and argument count
+without retaining argument text; argument values are never hashed, rendered, or reported.
+Passing `--enumerate` is a materially different operation: it launches configured local stdio
+servers and calls `tools/list`, so only enable it for code you trust. `--report` and `--gate`
+are explicit hosted-mode options and never send config bodies.
 
 ## Current limitations
 
