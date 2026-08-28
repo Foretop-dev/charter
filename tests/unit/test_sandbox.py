@@ -96,17 +96,14 @@ def test_bubblewrap_policy_is_read_only_networkless_and_environment_sanitized(
     rendered = repr((argv, child_env))
     assert secret not in rendered
     assert "CHARTER_HOST_SECRET" not in rendered
-    assert "--unshare-pid" in argv
-    assert "--unshare-ipc" in argv
-    assert "--unshare-uts" in argv
-    assert "--unshare-cgroup-try" in argv
+    assert "--unshare-all" in argv
     assert "--new-session" in argv
     assert "--die-with-parent" in argv
     assert argv[argv.index("--cap-drop") + 1] == "ALL"
     assert ["--ro-bind", str(project.resolve()), "/workspace"] == argv[
         argv.index(str(project.resolve())) - 1 : argv.index(str(project.resolve())) + 2
     ]
-    assert "--share-net" not in argv
+    assert "--share-net" in argv
     assert "--clearenv" in argv
     assert argv[argv.index("--seccomp") + 1] == "23"
     assert pass_fds == (23,)

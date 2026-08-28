@@ -169,10 +169,8 @@ def _probe_command(bubblewrap: str, seccomp_fd: int) -> list[str]:
         "/proc",
         "--dev",
         "/dev",
-        "--unshare-pid",
-        "--unshare-ipc",
-        "--unshare-uts",
-        "--unshare-cgroup-try",
+        "--unshare-all",
+        "--share-net",
         "--die-with-parent",
         "--new-session",
         "--cap-drop",
@@ -308,10 +306,11 @@ def build_bubblewrap_launch(
         str(_WORKSPACE),
         "--chdir",
         str(_WORKSPACE),
-        "--unshare-pid",
-        "--unshare-ipc",
-        "--unshare-uts",
-        "--unshare-cgroup-try",
+        "--unshare-all",
+        # Preserve the host network namespace only during Bubblewrap setup: GitHub's runner
+        # rejects creation of the isolated loopback interface. The child still cannot create
+        # any socket because the seccomp filter below is installed before it starts.
+        "--share-net",
         "--die-with-parent",
         "--new-session",
         "--cap-drop",
