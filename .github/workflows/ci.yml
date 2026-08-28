@@ -34,8 +34,14 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
-      - run: sudo apt-get update
-      - run: sudo apt-get install -y --no-install-recommends bubblewrap
+      - name: Install the Bubblewrap sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          sudo install -m 0644 \
+            /usr/share/apparmor/extra-profiles/bwrap-userns-restrict \
+            /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
       - run: uv sync --frozen
       - name: Prove hostile stdio servers remain confined
         run: uv run pytest tests/integration/test_enumeration_sandbox.py -q

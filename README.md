@@ -44,7 +44,10 @@ means the scan itself failed.
 The Action emits inline annotations and can maintain one summary comment on pull requests.
 Grant `pull-requests: write` when comments are enabled and make the base revision available to
 the checkout. Set `base` to an empty string for report-only use. When enumeration is enabled,
-the Action installs Bubblewrap on compatible Linux runners and fails closed elsewhere.
+the Action installs Bubblewrap and loads Ubuntu's restricted Bubblewrap AppArmor profile on
+ephemeral GitHub-hosted Linux runners. It never changes packages or AppArmor policy on a
+self-hosted runner: operators must provide a working Bubblewrap boundary there, or the Action
+fails closed before scanning.
 
 ## Privacy
 
@@ -62,6 +65,8 @@ explicit hosted-mode options and never send config bodies.
 - Only project-level Claude Code and Cursor MCP configuration files are scanned.
 - Live enumeration requires Linux and Bubblewrap. Remote transports are recorded but not
   contacted, and stdio servers that require credentials or network access remain `unknown`.
+- Ubuntu 24.04 self-hosted runners must allow Bubblewrap's restricted user namespace (for
+  example with the distribution's `bwrap-userns-restrict` AppArmor profile).
 - Capability-level drift requires comparable enumeration data on both revisions.
 
 ## License

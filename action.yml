@@ -61,22 +61,68 @@ runs:
     - name: Install the enumeration sandbox
       if: inputs.enumerate == 'true' && runner.os == 'Linux'
       shell: bash
+      env:
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
       run: |
-        if command -v bwrap >/dev/null 2>&1; then
+        set -eu
+
+        sandbox_probe() {
+          bwrap \
+            --ro-bind / / \
+            --unshare-all \
+            --share-net \
+            --die-with-parent \
+            --new-session \
+            --cap-drop ALL \
+            --clearenv \
+            -- /bin/true >/dev/null 2>&1
+        }
+
+        run_as_root() {
+          if [ "$(id -u)" -eq 0 ]; then
+            "$@"
+          elif command -v sudo >/dev/null 2>&1; then
+            sudo "$@"
+          else
+            return 126
+          fi
+        }
+
+        if command -v bwrap >/dev/null 2>&1 && sandbox_probe; then
           exit 0
         fi
-        if ! command -v apt-get >/dev/null 2>&1; then
-          echo "Bubblewrap is required for enumeration; install 'bubblewrap' on this runner" >&2
+
+        # A reusable Action must not rewrite a customer's self-hosted machine. The runner
+        # owner supplies Bubblewrap and any distribution-specific AppArmor policy there.
+        if [ "${RUNNER_ENVIRONMENT:-self-hosted}" != "github-hosted" ]; then
+          echo "Charter cannot establish Bubblewrap isolation on this self-hosted runner." >&2
+          echo "Install Bubblewrap and allow its restricted user namespace (for Ubuntu 24.04, load bwrap-userns-restrict), then retry." >&2
           exit 2
         fi
-        if [ "$(id -u)" -eq 0 ]; then
-          apt-get update
-          apt-get install -y --no-install-recommends bubblewrap
-        elif command -v sudo >/dev/null 2>&1; then
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bubblewrap
-        else
-          echo "Bubblewrap is required for enumeration and this runner cannot install it" >&2
+
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "Charter's GitHub-hosted runner setup requires apt-get" >&2
+          exit 2
+        fi
+        if ! run_as_root apt-get update || ! run_as_root apt-get install -y --no-install-recommends \
+          bubblewrap apparmor-profiles apparmor-utils; then
+          echo "Charter could not install the Bubblewrap sandbox on this GitHub-hosted runner" >&2
+          exit 2
+        fi
+
+        apparmor_source=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+        apparmor_target=/etc/apparmor.d/bwrap-userns-restrict
+        if [ ! -f "$apparmor_source" ]; then
+          echo "The bwrap-userns-restrict AppArmor profile is unavailable on this GitHub-hosted runner" >&2
+          exit 2
+        fi
+        if ! run_as_root install -m 0644 "$apparmor_source" "$apparmor_target" || \
+          ! run_as_root apparmor_parser -r "$apparmor_target"; then
+          echo "Charter could not load the restricted Bubblewrap AppArmor profile" >&2
+          exit 2
+        fi
+        if ! sandbox_probe; then
+          echo "Bubblewrap is installed but cannot create Charter's required isolation boundary" >&2
           exit 2
         fi
 
