@@ -87,12 +87,9 @@ def _probe_command(bubblewrap: str) -> list[str]:
         "--dev",
         "/dev",
         "--unshare-all",
-        # Bubblewrap requires the user-namespace flag to be explicit when --disable-userns is
-        # requested, even though --unshare-all already includes it semantically.
         "--unshare-user",
         "--die-with-parent",
         "--new-session",
-        "--disable-userns",
         "--cap-drop",
         "ALL",
         "--clearenv",
@@ -217,7 +214,6 @@ def build_bubblewrap_launch(
         "--unshare-user",
         "--die-with-parent",
         "--new-session",
-        "--disable-userns",
         "--cap-drop",
         "ALL",
         "--clearenv",
