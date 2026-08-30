@@ -19,7 +19,7 @@ from charter.sandbox import build_bubblewrap_launch, require_bubblewrap
 # decision, not an oversight: virtually every MCP server actually deployed today speaks this
 # one. specs/charter.md §11 already names protocol churn as a real, ongoing risk.
 _PROTOCOL_VERSION = "2025-06-18"
-_CLIENT_INFO = {"name": "foretop-charter", "version": "0.2.0"}
+_CLIENT_INFO = {"name": "foretop-charter", "version": "0.2.1"}
 _DEFAULT_TIMEOUT_SECONDS = 10.0
 _SHUTDOWN_GRACE_SECONDS = 2.0
 

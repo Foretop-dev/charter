@@ -26,6 +26,9 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run pytest tests -q
+        env:
+          FORCE_COLOR: "1"
+          TERM: xterm-256color
 
   enumeration-sandbox:
     runs-on: ubuntu-latest

@@ -141,7 +141,7 @@ runs:
         if [ -n "${{ inputs.base }}" ]; then
           args+=(--base "${{ inputs.base }}")
         fi
-        uvx foretop-charter "${args[@]}"
+        uvx foretop-charter==0.2.1 "${args[@]}"
         echo "exit-code=$?" >> "$GITHUB_OUTPUT"
 
     - name: Render PR comment body
@@ -159,7 +159,7 @@ runs:
         # on the same drift, which would kill this step under `set -e` before the comment is
         # ever rendered. The exit code that actually fails the job is the earlier step's.
         set +e
-        uvx foretop-charter "${args[@]}" > charter-comment-body.md
+        uvx foretop-charter==0.2.1 "${args[@]}" > charter-comment-body.md
         exit 0
 
     # Find-and-edit by an HTML marker, never post a second comment on repeat pushes — see
