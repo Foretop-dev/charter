@@ -1,8 +1,6 @@
 name: "foretop charter — MCP capability scan"
 description: >-
-  Scans an agent configuration (.mcp.json, .cursor/mcp.json) for every MCP server, tool, and
-  credential reference it grants access to, and fails the check when a pull request adds a new
-  server or expands what an existing tool can do since the merge base.
+  Detects pull requests that add MCP servers or expand existing MCP tool capabilities.
 author: "foretop"
 branding:
   icon: "shield"
