@@ -17,10 +17,12 @@ org-wide set is safe — no product can ever collide with another's identity.
 import os
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 
 import httpx
-from keel.report import DEFAULT_HUB_URL
-from pydantic import BaseModel, ConfigDict, Field
+import yaml
+from keel.report import DEFAULT_HUB_URL, DEFAULT_REPORT_TIMEOUT_SECONDS
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class Baseline(BaseModel):
@@ -143,9 +145,66 @@ def maybe_fetch_gate(*, enabled: bool, client: httpx.Client | None = None) -> Ga
     hub_url = os.environ.get("FORETOP_HUB_URL", DEFAULT_HUB_URL)
 
     owns_client = client is None
-    client = client or httpx.Client(timeout=30.0)
+    client = client or httpx.Client(timeout=DEFAULT_REPORT_TIMEOUT_SECONDS)
     try:
         return fetch_gate(hub_url=hub_url, token=token, client=client)
     finally:
         if owns_client:
             client.close()
+
+
+class GateFileError(Exception):
+    """Raised when --baseline-file/--suppressions-file was explicitly given but the file
+    doesn't exist or doesn't parse — an explicit ask, so failing loudly is the same
+    "never silently skip a requested action" rule GateFetchError already applies to the
+    hosted-fetch path."""
+
+
+def _load_yaml(path: Path) -> object:
+    if not path.is_file():
+        raise GateFileError(f"{path}: does not exist")
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise GateFileError(f"{path}: could not read as YAML ({exc})") from exc
+
+
+def load_local_baseline(path: Path | None) -> Baseline | None:
+    """The local, file-based equivalent of a hosted --gate's baseline half: same shape hub's own
+    hub/baseline.py already defines for hub's local web viewer (`name` + `identities`), reused
+    here as keel's own Baseline model so product CLIs never have to depend on hub itself
+    (SUITE_ARCHITECTURE.md §8 — hub isn't one of the four public mirrors)."""
+    if path is None:
+        return None
+    raw = _load_yaml(path)
+    try:
+        return Baseline.model_validate(raw)
+    except ValidationError as exc:
+        raise GateFileError(f"{path}: {exc}") from exc
+
+
+def load_local_suppressions(path: Path | None) -> list[Suppression]:
+    """The local, file-based equivalent of a hosted --gate's suppressions half: same shape
+    hub's own hub/suppressions.py already defines (a YAML list of identity/owner/reason/expiry
+    entries)."""
+    if path is None:
+        return []
+    raw = _load_yaml(path)
+    if not isinstance(raw, list):
+        raise GateFileError(f"{path}: expected a YAML list of suppressions")
+    suppressions: list[Suppression] = []
+    for i, entry in enumerate(raw):
+        try:
+            suppressions.append(Suppression.model_validate(entry))
+        except ValidationError as exc:
+            raise GateFileError(f"{path}[{i}]: {exc}") from exc
+    return suppressions
+
+
+def load_local_gate(*, baseline_path: Path | None, suppressions_path: Path | None) -> GateResponse:
+    """The one thing every CLI's --baseline-file/--suppressions-file pair calls — the local
+    counterpart to maybe_fetch_gate, needing no FORETOP_TOKEN and never making a network call."""
+    return GateResponse(
+        baseline=load_local_baseline(baseline_path),
+        suppressions=load_local_suppressions(suppressions_path),
+    )

@@ -378,6 +378,55 @@ def test_gate_fetch_error_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert result.exit_code == 2
 
 
+def test_gate_and_baseline_file_together_exits_2(tmp_path: Path) -> None:
+    repo, base_branch = make_git_service(tmp_path)
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers": {"svc1": {"command": "npx"}, "svc2": {"command": "npx"}}}'
+    )
+    baseline_path = tmp_path / "baseline.yaml"
+    baseline_path.write_text("name: main\nidentities: []\n")
+
+    result = runner.invoke(
+        app,
+        [
+            "scan",
+            str(repo),
+            "--base",
+            base_branch,
+            "--gate",
+            "--baseline-file",
+            str(baseline_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+
+
+def test_baseline_file_excludes_a_baselined_new_server_without_foretop_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from charter.findings import compute_identity
+
+    monkeypatch.delenv("FORETOP_TOKEN", raising=False)
+    repo, base_branch = make_git_service(tmp_path)
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers": {"svc1": {"command": "npx"}, "svc2": {"command": "npx"}}}'
+    )
+    identity = compute_identity("svc2", None, None)
+    baseline_path = tmp_path / "baseline.yaml"
+    baseline_path.write_text(f"name: main\nidentities: [{identity}]\n")
+
+    result = runner.invoke(
+        app,
+        ["scan", str(repo), "--base", base_branch, "--baseline-file", str(baseline_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "gate: 1 finding(s) excluded (1 baselined)" in result.stdout
+
+
 def test_report_defaults_to_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     service = make_service(tmp_path)
     calls = []

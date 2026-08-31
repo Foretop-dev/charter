@@ -5,7 +5,14 @@ from pathlib import Path
 
 import typer
 from keel.finding import Verdict
-from keel.gate import GateFetchError, gate_identities, maybe_fetch_gate, summarize
+from keel.gate import (
+    GateFetchError,
+    GateFileError,
+    gate_identities,
+    load_local_gate,
+    maybe_fetch_gate,
+    summarize,
+)
 from keel.git_ref import GitError, merge_base, toplevel
 from keel.render.triage_json import render_triage_json
 from keel.report import ReportError, maybe_report
@@ -164,6 +171,20 @@ def scan(
         "exclude matching drift from the exit-1 decision. Off by default; a no-op unless "
         "--base is also given.",
     ),
+    baseline_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--baseline-file",
+        help="Local, no-hosted-Hub equivalent of --gate's baseline half: a hand-editable YAML "
+        "file (name + identities) excluding matching drift from the exit-1 decision. Cannot "
+        "be combined with --gate.",
+    ),
+    suppressions_file: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--suppressions-file",
+        help="Local, no-hosted-Hub equivalent of --gate's suppressions half: a hand-editable "
+        "YAML list (identity/owner/reason/expiry) excluding matching drift from the exit-1 "
+        "decision. Cannot be combined with --gate.",
+    ),
 ) -> None:
     """Parse committed MCP client configs (.mcp.json, .cursor/mcp.json) under `path` and write
     a deterministic charter.lock recording every declared server, its transport, and the
@@ -174,6 +195,11 @@ def scan(
     """
     if fmt not in _FORMATS:
         error_console.print(f"Unknown --format {fmt!r}. Choose one of: {', '.join(_FORMATS)}.")
+        raise typer.Exit(code=2)
+    if gate and (baseline_file or suppressions_file):
+        error_console.print(
+            "--gate cannot be combined with --baseline-file or --suppressions-file."
+        )
         raise typer.Exit(code=2)
 
     root = path.resolve()
@@ -224,10 +250,16 @@ def scan(
     # documented imprecision), so identities are derived from the real to_findings() output
     # (confirmed the only source of BREAK in charter's own findings.py) rather than
     # hand-rederiving from Drift objects directly.
-    if gate and candidates:
+    if (gate or baseline_file or suppressions_file) and candidates:
         try:
-            gate_response = maybe_fetch_gate(enabled=True)
-        except GateFetchError as exc:
+            gate_response = (
+                maybe_fetch_gate(enabled=True)
+                if gate
+                else load_local_gate(
+                    baseline_path=baseline_file, suppressions_path=suppressions_file
+                )
+            )
+        except (GateFetchError, GateFileError) as exc:
             error_console.print(str(exc))
             raise typer.Exit(code=2) from exc
         assert gate_response is not None  # enabled=True always returns a GateResponse

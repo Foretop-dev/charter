@@ -10,6 +10,13 @@ from keel.triage import TriageResult
 
 DEFAULT_HUB_URL = "https://app.foretop.dev"
 
+# R11: reproduced live that a 3,782-finding --report payload (~3 MiB) hit ReadTimeout at the
+# old flat 30s while Hub's own Cloud Run request budget (300s) had room to spare — the client
+# gave up mid-upload/response-wait, not because Hub was actually too slow (measured server-side
+# ingest of that same payload at ~2s). 120s is comfortable margin under Hub's 300s ceiling even
+# on a slow connection, without waiting indefinitely on a genuinely stuck request.
+DEFAULT_REPORT_TIMEOUT_SECONDS = 120.0
+
 
 class ReportError(Exception):
     """Raised when --report was explicitly requested but cannot actually be sent — a missing
@@ -85,7 +92,7 @@ def maybe_report(
     hub_url = os.environ.get("FORETOP_HUB_URL", DEFAULT_HUB_URL)
 
     owns_client = client is None
-    client = client or httpx.Client(timeout=30.0)
+    client = client or httpx.Client(timeout=DEFAULT_REPORT_TIMEOUT_SECONDS)
     try:
         response = send_report(payload, hub_url=hub_url, token=token, client=client)
     finally:
