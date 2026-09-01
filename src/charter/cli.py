@@ -23,6 +23,7 @@ from charter.brand import BRAND
 from charter.collect import collect
 from charter.drift import Drift, compute_drift
 from charter.enumerate import EnumerationResult, enumerate_stdio_server
+from charter.enumerate_http import enumerate_http_server
 from charter.findings import to_findings
 from charter.git_ref import show_file_at_ref
 from charter.lockfile import to_manifest, write_lock
@@ -50,11 +51,23 @@ def _callback() -> None:
     an app with a single command into a bare `charter PATH` invocation instead."""
 
 
+_HTTP_TRANSPORTS = (Transport.HTTP, Transport.SSE)
+
+
 def _enumerate_all(servers: tuple[Server, ...], timeout: float) -> dict[Server, EnumerationResult]:
+    """R20: remote servers are enumerated too, closing the HTTP half of specs/charter.md FR-002.
+
+    A server absent from this dict is indistinguishable downstream from one nobody asked to
+    enumerate, which is exactly what used to happen to every HTTP server: it was skipped here
+    and read as "not enumerated". Every server now gets an entry, so a remote endpoint that
+    refuses (OAuth, most commonly) reports a stated reason instead of silence.
+    """
     results: dict[Server, EnumerationResult] = {}
     for server in servers:
         if server.transport == Transport.STDIO:
             results[server] = enumerate_stdio_server(server, timeout=timeout)
+        elif server.transport in _HTTP_TRANSPORTS:
+            results[server] = enumerate_http_server(server, timeout=timeout)
     return results
 
 
@@ -140,9 +153,11 @@ def scan(
     enumerate_tools: bool = typer.Option(
         False,
         "--enumerate",
-        help="On Linux, launch each stdio server inside Charter's fail-closed Bubblewrap "
-        "sandbox and call its real tools/list. The repository is read-only and the server "
-        "gets no network or configured credentials. Remote servers are not enumerated.",
+        help="Call each server's real tools/list. On Linux, a stdio server is launched inside "
+        "Charter's fail-closed Bubblewrap sandbox: the repository is read-only and the server "
+        "gets no network or configured credentials. A remote (http/sse) server is contacted "
+        "over the network instead, launching nothing locally and sending no credentials, so an "
+        "endpoint requiring authentication reports why rather than going silent.",
     ),
     timeout: float = typer.Option(
         10.0,
@@ -190,8 +205,15 @@ def scan(
     a deterministic charter.lock recording every declared server, its transport, and the
     *names* (never values — DEC-06) of any credential-referencing env vars or headers it
     wires in. Static parsing only by default: no server is ever launched, no network call is
-    made. --enumerate launches local stdio servers without network access and only when the
-    required Linux/Bubblewrap isolation boundary is available.
+    made.
+
+    --enumerate opts into calling each server's real tools/list, and does one of two things
+    depending on the transport. A stdio server is launched locally, without network access, and
+    only when the required Linux/Bubblewrap isolation boundary is available. A remote (http/sse)
+    server is contacted over the network instead — nothing runs locally, no credentials are
+    sent, and a server that requires authentication reports why. Both are opt-in because both
+    are a real decision: one runs a third party's code, the other tells a third party you are
+    looking.
     """
     if fmt not in _FORMATS:
         error_console.print(f"Unknown --format {fmt!r}. Choose one of: {', '.join(_FORMATS)}.")
