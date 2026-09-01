@@ -1,0 +1,20 @@
+# MCP servers published by Microsoft.
+#
+# Same rule as every other file here: capabilities transcribed from the server's own published
+# tool list, with the source cited and the date a person checked it.
+
+- package: '@playwright/mcp'
+  # The highest-capability entry in this registry, and the one most worth stating precisely.
+  # `browser_evaluate` evaluates a JavaScript expression on the page, and
+  # `browser_run_code_unsafe` runs a Playwright code snippet — documented as unsafe because it
+  # "executes arbitrary JavaScript in the Playwright server process". That is code execution in
+  # the plain sense, not a stretched reading. `browser_navigate` reaches arbitrary URLs
+  # (network egress), and `browser_take_screenshot`/`browser_pdf_save` write files to the
+  # configured output directory (write).
+  capabilities:
+  - read
+  - write
+  - network_egress
+  - code_execution
+  source_url: https://github.com/microsoft/playwright-mcp
+  verified_at: 2026-09-01

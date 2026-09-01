@@ -1,0 +1,45 @@
+# Reference MCP servers published under the @modelcontextprotocol npm scope.
+#
+# Every entry's capabilities are transcribed from that server's own published tool list, never
+# inferred from its package name — the same rule ebb's retirement registry follows, and for the
+# same reason: a capability claim a reader can't check against a cited source is an assertion.
+# `verified_at` is the day a person last read the source, not the day the file was edited.
+#
+# A package absent from this registry stays unknown. That is the point, not a gap to be filled
+# by guessing: charter's whole posture is that unproven capability is reported as unproven.
+
+- package: '@modelcontextprotocol/server-filesystem'
+  # Documented tools: read_text_file, read_media_file, read_multiple_files, list_directory,
+  # list_directory_with_sizes, search_files, directory_tree, get_file_info,
+  # list_allowed_directories (read) — write_file, edit_file, create_directory, move_file
+  # (write, and the README's own annotation table marks move_file as deleting the source).
+  # No network egress and no code execution: it only ever touches the directories it is
+  # launched with.
+  capabilities:
+  - read
+  - write
+  source_url: https://github.com/modelcontextprotocol/servers/blob/main/src/filesystem/README.md
+  verified_at: 2026-09-01
+
+- package: '@modelcontextprotocol/server-postgres'
+  # One documented tool, `query`: "Execute read-only SQL queries against the connected
+  # database". Read only — the server's own README opens by calling itself "read-only access".
+  # Deliberately NOT marked credential_access: the tool reads data, it does not hand out
+  # credentials. The connection string this server is launched with is a property of the
+  # *config*, and charter reports that separately from the config itself, with evidence.
+  capabilities:
+  - read
+  source_url: https://github.com/modelcontextprotocol/servers-archived/blob/main/src/postgres/README.md
+  verified_at: 2026-09-01
+
+- package: '@modelcontextprotocol/server-github'
+  # Documented as creating and updating files, pushing changes (automatically creating
+  # branches), and searching code, issues/PRs and users — so read plus write, against a remote
+  # API, which is network egress by construction. Requires a personal access token; that
+  # credential is again a property of the config, reported from the config's own env block.
+  capabilities:
+  - read
+  - write
+  - network_egress
+  source_url: https://github.com/modelcontextprotocol/servers-archived/blob/main/src/github/README.md
+  verified_at: 2026-09-01

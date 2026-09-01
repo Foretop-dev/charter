@@ -1,6 +1,6 @@
 [project]
 name = "foretop-charter"
-version = "0.3.0"
+version = "0.4.0"
 description = "Scans an agent configuration and produces a reviewable record of every MCP server, tool, scope and credential path — then fails CI when an update quietly expands what the agent can reach."
 readme = "README.md"
 requires-python = ">=3.12"

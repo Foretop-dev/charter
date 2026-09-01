@@ -12,15 +12,28 @@ from pathlib import Path
 from keel.finding import ProductCode
 from keel.triage import IssueGroup, Lane, OccurrenceRef, TriageResult, make_fingerprint
 
-from charter.capability import CapabilityClass, classify_tool
+from charter.capability import (
+    CapabilityClass,
+    classify_tool,
+    declared_credential_env_vars,
+    has_credential_bearing_argument,
+)
 from charter.drift import Drift, DriftKind
 from charter.enumerate import EnumerationResult, Tool
 from charter.models import Server, ServerSet
+from charter.server_registry import (
+    ServerRegistryEntry,
+    load_bundled_server_registry,
+    lookup_server_package,
+)
 
-_HIGH_RISK_CAPABILITIES = {
-    CapabilityClass.CREDENTIAL_ACCESS.value,
-    CapabilityClass.CODE_EXECUTION.value,
-}
+# The two classes that make a server worth acting on rather than merely recording. Held once as
+# CapabilityClass members (for the registry, R18) and once as their string values (for the
+# enumerated path, which compares against classify_tool's own string capability values).
+_HIGH_RISK_CAPABILITY_CLASSES = frozenset(
+    {CapabilityClass.CREDENTIAL_ACCESS, CapabilityClass.CODE_EXECUTION}
+)
+_HIGH_RISK_CAPABILITIES = {c.value for c in _HIGH_RISK_CAPABILITY_CLASSES}
 _UNKNOWN_CAPABILITY = "unknown"
 
 
@@ -71,6 +84,55 @@ def _tool_occurrences(
     return occurrences, capability_values
 
 
+def _static_lane_and_reason(
+    entry: ServerRegistryEntry | None,
+    credential_env_vars: tuple[str, ...],
+    credential_argument: bool,
+) -> tuple[Lane, str, str]:
+    """The lane for a server that was never launched, from what the config alone establishes.
+
+    Every branch says how it knows. "documented" never means "enumerated": a registry entry
+    describes the published package, not the tools this particular server returned, and
+    conflating the two would be the false `present` charter's whole posture is built against.
+    """
+    credential_notes: list[str] = []
+    if credential_argument:
+        # Never the argument itself — see capability.has_credential_bearing_argument.
+        credential_notes.append("a credential is embedded in a launch argument")
+    if credential_env_vars:
+        credential_notes.append(f"wired to {', '.join(credential_env_vars)}")
+
+    documented = ", ".join(sorted(c.value for c in entry.capabilities)) if entry else ""
+    risky = (
+        sorted(c.value for c in entry.capabilities & _HIGH_RISK_CAPABILITY_CLASSES) if entry else []
+    )
+
+    if risky:
+        reason = f"Plan · documented {', '.join(risky)} capability, not enumerated"
+        if credential_notes:
+            reason += f" · {'; '.join(credential_notes)}"
+        return Lane.PLAN, reason, "registry"
+
+    if credential_notes:
+        reason = f"Plan · {'; '.join(credential_notes)}"
+        if documented:
+            reason += f" · documented capabilities: {documented}, not enumerated"
+        return Lane.PLAN, reason, "registry" if entry else "config"
+
+    if entry:
+        return (
+            Lane.INVENTORY,
+            f"Inventory · documented capabilities: {documented}, not enumerated, nothing elevated",
+            "registry",
+        )
+
+    return (
+        Lane.REVIEW,
+        "Review · not enumerated — static parsing cannot say what tools it exposes",
+        "none",
+    )
+
+
 def build_triage(
     server_set: ServerSet,
     enumeration: dict[Server, EnumerationResult],
@@ -83,6 +145,8 @@ def build_triage(
         for d in drift
         if d.kind in (DriftKind.NEW_TOOL, DriftKind.SEVERITY_INCREASED) and d.tool_name
     }
+    # Loaded once per run rather than per server — it is small, bundled, and read-only.
+    registry = load_bundled_server_registry()
 
     groups: list[IssueGroup] = []
     for server in server_set.servers:
@@ -97,23 +161,36 @@ def build_triage(
         is_new = server.name in new_servers
         is_drifted = server.name in drifted_servers
 
+        # R18: what the committed config itself establishes, without launching anything. A
+        # declared credential and a curated package's documented capabilities are both static
+        # facts; only the tool list needs enumeration. `capability_source` records which of the
+        # three a group's answer came from, so a reader is never left guessing whether a
+        # capability was observed or documented.
+        credential_env_vars = declared_credential_env_vars(server)
+        credential_argument = has_credential_bearing_argument(server)
+        registry_entry = lookup_server_package(server, registry)
+        capability_source = "none"
+
         if is_new:
             lane, reason = Lane.ACT_NOW, "Act now · new server since baseline"
         elif is_drifted:
             lane, reason = Lane.ACT_NOW, "Act now · capability profile changed since baseline"
         elif result is None:
-            lane = Lane.REVIEW
-            reason = "Review · not enumerated — static parsing cannot say what tools it exposes"
+            lane, reason, capability_source = _static_lane_and_reason(
+                registry_entry, credential_env_vars, credential_argument
+            )
         elif result.error is not None:
             lane = Lane.REVIEW
             reason = f"Review · enumeration failed: {result.error}"
         elif capability_values & _HIGH_RISK_CAPABILITIES:
             risky = ", ".join(sorted(capability_values & _HIGH_RISK_CAPABILITIES))
             lane, reason = Lane.PLAN, f"Plan · exposes {risky} capability"
+            capability_source = "enumeration"
         else:
             tool_count = len(result.tools) if result is not None else 0
             lane = Lane.INVENTORY
             reason = f"Inventory · enumerated, {tool_count} tool(s), no elevated capability"
+            capability_source = "enumeration"
 
         groups.append(
             IssueGroup(
@@ -129,6 +206,7 @@ def build_triage(
                 attributes={
                     "transport": server.transport.value,
                     "tool_count": str(len(result.tools)) if result is not None else "-",
+                    "capability_source": capability_source,
                 },
             )
         )

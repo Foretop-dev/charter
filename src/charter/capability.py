@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib import resources
@@ -6,6 +7,7 @@ from typing import Any
 import yaml
 
 from charter.enumerate import Tool
+from charter.models import Server
 
 
 class CapabilityClass(StrEnum):
@@ -142,3 +144,53 @@ def classify_tool(tool: Tool) -> Classification:
         severity=severity,
         rule_version=_RULE_VERSION,
     )
+
+
+# ---------------------------------------------------------------- static config signal (R18)
+
+# Names that make an environment variable a credential rather than ordinary configuration.
+# Deliberately the same vocabulary the credential_access rule in rules/capability_taxonomy.yaml
+# already uses for tool names and schema properties, so one idea has one definition.
+_CREDENTIAL_NAME_PARTS = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "credential",
+    "api_key",
+    "apikey",
+    "access_key",
+    "private_key",
+    "auth",
+)
+
+# A URI carrying userinfo with a password: scheme://user:secret@host. This is the shape a
+# committed database DSN takes, and it is the reason this check exists — a connection string in
+# a positional argument is a credential sitting in the repository.
+_CREDENTIAL_URI_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://[^/\s:@]+:[^/\s@]+@")
+
+
+def declared_credential_env_vars(server: Server) -> tuple[str, ...]:
+    """Environment variable *names* the config wires into this server that read as credentials.
+
+    Names only — `Server.env_var_names` never holds a value (DEC-06), so there is nothing here
+    to leak. A server declaring `GITHUB_PERSONAL_ACCESS_TOKEN` is declaring credential access in
+    the committed file, which is a static fact rather than an inference about what it might do.
+    """
+    return tuple(
+        name
+        for name in server.env_var_names
+        if any(part in name.lower() for part in _CREDENTIAL_NAME_PARTS)
+    )
+
+
+def has_credential_bearing_argument(server: Server) -> bool:
+    """Whether any launch argument embeds a credential, without revealing which or what.
+
+    Returns a bool on purpose. `Server.args` is held in memory only so real enumeration can
+    build a launch vector, and lock schema v4 records `arg_count` rather than argument text
+    precisely so a password in a positional argument cannot reach charter.lock, rendered output
+    or hosted reporting (DEC-06). Reporting *that* one exists is the finding; reproducing it
+    would be the leak this design exists to prevent.
+    """
+    return any(_CREDENTIAL_URI_RE.match(arg) for arg in server.args)
