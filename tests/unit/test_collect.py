@@ -72,3 +72,39 @@ def test_transport_is_correctly_recorded_from_each_source(tmp_path: Path) -> Non
     result = collect(tmp_path)
 
     assert result.servers[0].transport == Transport.HTTP
+
+
+def test_all_three_committed_config_formats_are_collected_together(tmp_path: Path) -> None:
+    """R22: a real team may use more than one client. Cursor and VS Code configs coexist in
+    plenty of repositories, and each declares its own servers, so collect must read every
+    format present rather than stopping at the first file it finds."""
+    (tmp_path / ".mcp.json").write_text(
+        '{"mcpServers": {"from-claude": {"command": "npx", "args": []}}}', encoding="utf-8"
+    )
+    (tmp_path / ".cursor").mkdir()
+    (tmp_path / ".cursor" / "mcp.json").write_text(
+        '{"mcpServers": {"from-cursor": {"command": "npx", "args": []}}}', encoding="utf-8"
+    )
+    (tmp_path / ".vscode").mkdir()
+    (tmp_path / ".vscode" / "mcp.json").write_text(
+        '{"servers": {"from-vscode": {"command": "npx", "args": []}}}', encoding="utf-8"
+    )
+
+    server_set = collect(tmp_path)
+
+    assert {s.name for s in server_set.servers} == {"from-claude", "from-cursor", "from-vscode"}
+
+
+def test_a_vscode_only_repository_is_no_longer_invisible(tmp_path: Path) -> None:
+    """The gap R22 closed: before `.vscode/mcp.json` was a candidate, a repository configuring
+    its agent through VS Code looked exactly like one declaring no agent configuration at
+    all."""
+    (tmp_path / ".vscode").mkdir()
+    (tmp_path / ".vscode" / "mcp.json").write_text(
+        '{"servers": {"nx-mcp": {"type": "stdio", "command": "npx", "args": ["-y", "nx-mcp"]}}}',
+        encoding="utf-8",
+    )
+
+    server_set = collect(tmp_path)
+
+    assert [s.name for s in server_set.servers] == ["nx-mcp"]

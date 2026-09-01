@@ -136,3 +136,37 @@ def test_a_package_declared_twice_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ServerRegistryLoadError):
         load_server_registry([path])
+
+
+def test_the_dev_tooling_packages_seen_in_real_configs_are_curated() -> None:
+    """R22: every package below was found in a real committed `.vscode/mcp.json` or
+    `.mcp.json`, and each capability is transcribed from that project's own documentation.
+
+    `@angular/cli` and `chrome-devtools-mcp` both execute code — `run_target` "executes a
+    configured target (build, test, lint, e2e, deploy)" and `evaluate_script` evaluates
+    JavaScript in the browser — which is exactly the kind of reach a reviewer should see."""
+    registry = load_server_registry(sorted(REGISTRY_DIR.glob("*.yaml")))
+
+    for package in ("chrome-devtools-mcp", "@angular/cli"):
+        entry = registry[package]
+        assert CapabilityClass.CODE_EXECUTION in entry.capabilities, package
+
+    # nx-mcp describes generators, it does not invoke one — the distinction between it and
+    # @angular/cli's run_target, and the reason it is not marked code_execution.
+    assert registry["nx-mcp"].capabilities == frozenset({CapabilityClass.READ})
+
+
+def test_a_versioned_launch_vector_for_a_dev_tool_still_resolves() -> None:
+    """Real configs pin these with `@latest` (`chrome-devtools-mcp@latest`, `nx-mcp@latest`),
+    and `@angular/cli` is invoked with its subcommand as a following argument."""
+    registry = load_server_registry(sorted(REGISTRY_DIR.glob("*.yaml")))
+
+    cases = {
+        ("npx", ("chrome-devtools-mcp@latest",)): "chrome-devtools-mcp",
+        ("npx", ("-y", "nx-mcp@latest")): "nx-mcp",
+        ("npx", ("@angular/cli", "mcp")): "@angular/cli",
+    }
+    for (command, args), expected in cases.items():
+        entry = lookup_server_package(_server(command, args), registry)
+        assert entry is not None, f"{command} {args} did not resolve"
+        assert entry.package == expected

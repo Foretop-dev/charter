@@ -278,3 +278,78 @@ def test_a_real_enumeration_still_wins_over_the_registry() -> None:
     assert group.lane is Lane.INVENTORY
     assert "enumerated, 1 tool(s)" in group.reason
     assert group.attributes["capability_source"] == "enumeration"
+
+
+# ------------------------------------------------- one server, several config files (R22)
+
+
+def test_the_same_server_declared_in_several_configs_is_one_group() -> None:
+    """R22: adding `.vscode/mcp.json` made a latent bug common. A team using more than one
+    client declares the same server in each client's config — the real dotCMS/core repository
+    declares `angular-cli` identically in `.mcp.json`, `.cursor/mcp.json` and
+    `.vscode/mcp.json`, and charter emitted three groups carrying the *same* fingerprint.
+
+    That is not merely noisy: `hub.models.IssueGroupRow` is unique on
+    `(run_id, fingerprint)`, so ingesting such a run would violate its own constraint. One
+    server declared three times is one server, and each declaration is an occurrence — the
+    same folding triage.py already does for a server's tools."""
+    common = {
+        "name": "angular-cli",
+        "transport": Transport.STDIO,
+        "command": "npx",
+        "args": ("@angular/cli", "mcp"),
+        "env_var_names": (),
+    }
+    servers = tuple(
+        make_server(**common, source_file=ROOT / f, source_line=n)
+        for f, n in ((".mcp.json", 13), (".cursor/mcp.json", 10), (".vscode/mcp.json", 13))
+    )
+
+    result = build_triage(ServerSet(servers=servers), {}, (), ROOT)
+
+    assert len(result.groups) == 1, "one server declared three times is one group"
+    (group,) = result.groups
+    assert group.label == "angular-cli"
+    assert group.occurrence_count == 3, "each declaration is its own occurrence"
+    sources = {o["source_uri"] if isinstance(o, dict) else o.source_uri for o in group.occurrences}
+    assert sources == {".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json"}
+
+
+def test_every_group_in_a_run_has_a_distinct_fingerprint() -> None:
+    """The property the hub constraint actually depends on, asserted directly rather than
+    inferred from the group count."""
+    servers = tuple(
+        make_server(name=name, source_file=ROOT / f, source_line=1)
+        for name, f in (
+            ("angular-cli", ".mcp.json"),
+            ("angular-cli", ".vscode/mcp.json"),
+            ("nx-mcp", ".cursor/mcp.json"),
+            ("nx-mcp", ".vscode/mcp.json"),
+            ("primeng", ".mcp.json"),
+        )
+    )
+
+    result = build_triage(ServerSet(servers=servers), {}, (), ROOT)
+
+    fingerprints = [g.fingerprint for g in result.groups]
+    assert len(fingerprints) == len(set(fingerprints)), "duplicate fingerprints in one run"
+    assert {g.label for g in result.groups} == {"angular-cli", "nx-mcp", "primeng"}
+
+
+def test_folding_keeps_the_most_serious_lane_across_declarations() -> None:
+    """If one declaration wires a credential and another does not, the reviewer needs the
+    credential-bearing answer — taking whichever happened to be parsed first would hide it."""
+    servers = (
+        make_server(name="gh", source_file=ROOT / ".mcp.json", env_var_names=()),
+        make_server(
+            name="gh",
+            source_file=ROOT / ".vscode/mcp.json",
+            env_var_names=("GITHUB_PERSONAL_ACCESS_TOKEN",),
+        ),
+    )
+
+    result = build_triage(ServerSet(servers=servers), {}, (), ROOT)
+
+    (group,) = result.groups
+    assert group.lane is Lane.PLAN
+    assert "GITHUB_PERSONAL_ACCESS_TOKEN" in group.reason

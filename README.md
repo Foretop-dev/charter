@@ -35,7 +35,7 @@ means the scan itself failed.
 ## GitHub Action
 
 ```yaml
-- uses: foretop-dev/charter@v0.5.0
+- uses: foretop-dev/charter@v0.6.0
   with:
     base: ${{ github.event.pull_request.base.sha }}
     enumerate: "false"

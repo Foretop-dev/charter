@@ -1,0 +1,21 @@
+# MCP servers published by Nrwl (Nx).
+#
+# Same rule as every other file here: capabilities transcribed from the server's own published
+# tool list, with the source cited and the date a person checked it.
+
+- package: nx-mcp
+  # Every documented tool reads and none of them act: nx_docs, nx_workspace, nx_workspace_path,
+  # nx_project_details, nx_generators, nx_generator_schema, nx_available_plugins,
+  # nx_current_running_tasks_details, nx_current_running_task_output and nx_visualize_graph all
+  # return information. Notably it does *not* run a generator — nx_generators and
+  # nx_generator_schema describe them, they do not invoke one, which is the difference between
+  # this and @angular/cli's own run_target.
+  #
+  # Deliberately excluded from this entry: the "Nx Cloud Tools" the README lists as available
+  # only when Nx Cloud is enabled. Their availability depends on workspace configuration this
+  # registry cannot see, so claiming their capabilities for every nx-mcp entry would overstate
+  # what is known.
+  capabilities:
+  - read
+  source_url: https://github.com/nrwl/nx-console/blob/main/apps/nx-mcp/README.md
+  verified_at: 2026-09-01

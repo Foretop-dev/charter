@@ -7,6 +7,8 @@ Consumes `ServerSet`/`enumeration`/`drift` directly, the same live objects `cli.
 builds before calling `to_findings` — no re-parsing of rendered `Finding` text.
 """
 
+from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 from keel.finding import ProductCode
@@ -148,55 +150,41 @@ def build_triage(
     # Loaded once per run rather than per server — it is small, bundled, and read-only.
     registry = load_bundled_server_registry()
 
-    groups: list[IssueGroup] = []
+    # R22: one server declared in several client configs is still one server. A team using more
+    # than one client repeats each server across each client's file — the real dotCMS/core
+    # repository declares `angular-cli` byte-identically in .mcp.json, .cursor/mcp.json and
+    # .vscode/mcp.json. Emitting a group per declaration produced three groups carrying the
+    # *same* fingerprint, and `hub.models.IssueGroupRow` is unique on (run_id, fingerprint), so
+    # such a run would violate that constraint on ingest. Grouping by name folds the
+    # declarations into one group with an occurrence each — the same folding this module
+    # already does for a server's tools, applied one level up.
+    by_name: dict[str, list[Server]] = defaultdict(list)
     for server in server_set.servers:
+        by_name[server.name].append(server)
+
+    groups: list[IssueGroup] = []
+    for name, declarations in by_name.items():
+        # The declaration carrying the most evidence decides the lane, so a credential wired in
+        # only one client's config is not lost to whichever file happened to be parsed first.
+        # Everything below is computed per declaration and then reduced.
+        per_declaration = [
+            _declaration_answer(server, enumeration, registry, new_servers, drifted_servers, root)
+            for server in declarations
+        ]
+        best = max(per_declaration, key=lambda answer: _LANE_SEVERITY[answer.lane])
+        occurrences = [
+            occurrence for answer in per_declaration for occurrence in answer.occurrences
+        ]
+        capability_values = set().union(*(a.capability_values for a in per_declaration))
+        server = best.server
         result = enumeration.get(server)
-        occurrences = [_server_occurrence(server, root)]
-        capability_values: set[str] = set()
-
-        if result is not None and result.error is None and result.tools:
-            tool_occurrences, capability_values = _tool_occurrences(server, result.tools, root)
-            occurrences.extend(tool_occurrences)
-
-        is_new = server.name in new_servers
-        is_drifted = server.name in drifted_servers
-
-        # R18: what the committed config itself establishes, without launching anything. A
-        # declared credential and a curated package's documented capabilities are both static
-        # facts; only the tool list needs enumeration. `capability_source` records which of the
-        # three a group's answer came from, so a reader is never left guessing whether a
-        # capability was observed or documented.
-        credential_env_vars = declared_credential_env_vars(server)
-        credential_argument = has_credential_bearing_argument(server)
-        registry_entry = lookup_server_package(server, registry)
-        capability_source = "none"
-
-        if is_new:
-            lane, reason = Lane.ACT_NOW, "Act now · new server since baseline"
-        elif is_drifted:
-            lane, reason = Lane.ACT_NOW, "Act now · capability profile changed since baseline"
-        elif result is None:
-            lane, reason, capability_source = _static_lane_and_reason(
-                registry_entry, credential_env_vars, credential_argument
-            )
-        elif result.error is not None:
-            lane = Lane.REVIEW
-            reason = f"Review · enumeration failed: {result.error}"
-        elif capability_values & _HIGH_RISK_CAPABILITIES:
-            risky = ", ".join(sorted(capability_values & _HIGH_RISK_CAPABILITIES))
-            lane, reason = Lane.PLAN, f"Plan · exposes {risky} capability"
-            capability_source = "enumeration"
-        else:
-            tool_count = len(result.tools) if result is not None else 0
-            lane = Lane.INVENTORY
-            reason = f"Inventory · enumerated, {tool_count} tool(s), no elevated capability"
-            capability_source = "enumeration"
+        lane, reason, capability_source = best.lane, best.reason, best.capability_source
 
         groups.append(
             IssueGroup(
-                fingerprint=make_fingerprint("charter", server.name),
+                fingerprint=make_fingerprint("charter", name),
                 product=ProductCode.CHARTER,
-                label=server.name,
+                label=name,
                 lane=lane,
                 reason=reason,
                 occurrence_count=len(occurrences),
@@ -207,6 +195,9 @@ def build_triage(
                     "transport": server.transport.value,
                     "tool_count": str(len(result.tools)) if result is not None else "-",
                     "capability_source": capability_source,
+                    # Only present when it is true, so an ordinary single-declaration server's
+                    # attributes are unchanged.
+                    **({"declared_in": str(len(declarations))} if len(declarations) > 1 else {}),
                 },
             )
         )
@@ -215,4 +206,76 @@ def build_triage(
         product=ProductCode.CHARTER,
         groups=groups,
         observations=sum(g.occurrence_count for g in groups),
+    )
+
+
+@dataclass(frozen=True)
+class _DeclarationAnswer:
+    """One config file's answer about one server, before duplicates are reduced."""
+
+    server: Server
+    lane: Lane
+    reason: str
+    capability_source: str
+    occurrences: list[OccurrenceRef]
+    capability_values: set[str]
+
+
+_LANE_SEVERITY = {Lane.INVENTORY: 0, Lane.REVIEW: 1, Lane.PLAN: 2, Lane.ACT_NOW: 3}
+
+
+def _declaration_answer(
+    server: Server,
+    enumeration: dict[Server, EnumerationResult],
+    registry: dict[str, ServerRegistryEntry],
+    new_servers: set[str],
+    drifted_servers: set[str],
+    root: Path,
+) -> _DeclarationAnswer:
+    result = enumeration.get(server)
+    occurrences = [_server_occurrence(server, root)]
+    capability_values: set[str] = set()
+
+    if result is not None and result.error is None and result.tools:
+        tool_occurrences, capability_values = _tool_occurrences(server, result.tools, root)
+        occurrences.extend(tool_occurrences)
+
+    # R18: what the committed config itself establishes, without launching anything. A declared
+    # credential and a curated package's documented capabilities are both static facts; only the
+    # tool list needs enumeration. `capability_source` records which of the three this answer
+    # came from, so a reader is never left guessing whether a capability was observed or merely
+    # documented.
+    credential_env_vars = declared_credential_env_vars(server)
+    credential_argument = has_credential_bearing_argument(server)
+    registry_entry = lookup_server_package(server, registry)
+    capability_source = "none"
+
+    if server.name in new_servers:
+        lane, reason = Lane.ACT_NOW, "Act now · new server since baseline"
+    elif server.name in drifted_servers:
+        lane, reason = Lane.ACT_NOW, "Act now · capability profile changed since baseline"
+    elif result is None:
+        lane, reason, capability_source = _static_lane_and_reason(
+            registry_entry, credential_env_vars, credential_argument
+        )
+    elif result.error is not None:
+        lane = Lane.REVIEW
+        reason = f"Review · enumeration failed: {result.error}"
+    elif capability_values & _HIGH_RISK_CAPABILITIES:
+        risky = ", ".join(sorted(capability_values & _HIGH_RISK_CAPABILITIES))
+        lane, reason = Lane.PLAN, f"Plan · exposes {risky} capability"
+        capability_source = "enumeration"
+    else:
+        tool_count = len(result.tools) if result is not None else 0
+        lane = Lane.INVENTORY
+        reason = f"Inventory · enumerated, {tool_count} tool(s), no elevated capability"
+        capability_source = "enumeration"
+
+    return _DeclarationAnswer(
+        server=server,
+        lane=lane,
+        reason=reason,
+        capability_source=capability_source,
+        occurrences=occurrences,
+        capability_values=capability_values,
     )

@@ -1,0 +1,35 @@
+# MCP servers published by Google projects (Chrome DevTools, Angular).
+#
+# Same rule as every other file here: capabilities transcribed from the server's own published
+# tool list, with the source cited and the date a person checked it. Never inferred from a
+# package name.
+
+- package: chrome-devtools-mcp
+  # `evaluate_script` evaluates JavaScript in the browser context — code execution in the plain
+  # sense. `navigate_page` reaches arbitrary URLs and `list_network_requests`/
+  # `get_network_request` inspect traffic (network egress). File-writing tools exist and are
+  # restricted to the OS temp directory by default, with an `--allow-unrestricted-paths` flag
+  # that removes that restriction (write). The project's own README warns that it "exposes
+  # content of the browser instance to the MCP clients allowing them to inspect, debug, and
+  # modify any data in the browser or DevTools".
+  capabilities:
+  - read
+  - write
+  - network_egress
+  - code_execution
+  source_url: https://github.com/ChromeDevTools/chrome-devtools-mcp
+  verified_at: 2026-09-01
+
+- package: '@angular/cli'
+  # Invoked as `npx @angular/cli mcp`. `run_target` "Executes a configured target (e.g. build,
+  # test, lint, e2e, deploy)" and `devserver.start` asynchronously starts a dev server — both
+  # code execution. The documented workflows have the agent apply "the single actionable change
+  # returned by the tool to the codebase" (write), and `search_documentation` queries
+  # angular.dev over the network (network egress).
+  capabilities:
+  - read
+  - write
+  - network_egress
+  - code_execution
+  source_url: https://angular.dev/ai/mcp
+  verified_at: 2026-09-01
